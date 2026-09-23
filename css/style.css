@@ -252,10 +252,18 @@ html, body {
   grid-template-rows: auto 1fr !important;
 }
 #app.chrome-hidden .locate-fab {
-  bottom: calc(16px + var(--safe-bottom));
+  bottom: calc(12px + var(--safe-bottom));
+  right: 12px;
 }
+/* İz / kalem çubuğu: en altta, konumun solunda */
 #app.chrome-hidden .draw-bar {
-  bottom: calc(72px + var(--safe-bottom));
+  left: 12px;
+  right: 68px;
+  bottom: calc(12px + var(--safe-bottom));
+  transform: none;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  max-width: none;
 }
 
 .draw-bar {
