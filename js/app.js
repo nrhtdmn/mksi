@@ -1957,6 +1957,13 @@ function bindUi() {
   $("#btnParselOpen").addEventListener("click", () => {
     openTkgmInBrowser();
   });
+  $("#btnParselCopyLink")?.addEventListener("click", () => {
+    const la = $("#parselLatVal")?.dataset?.v;
+    const lo = $("#parselLonVal")?.dataset?.v;
+    let text = TKGM_PARSEL_URL;
+    if (la && lo) text = `TKGM Parsel Sorgu\nEnlem: ${la}\nBoylam: ${lo}\n${TKGM_PARSEL_URL}`;
+    copyText(text);
+  });
 
   $("#btnCircleDraw").addEventListener("click", () => {
     const mode = $("#circleCenter").value;
