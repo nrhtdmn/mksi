@@ -32,6 +32,7 @@ let layers = {};
 let gpsMarker = null;
 let gpsAccuracy = null;
 let lastGps = null;
+let lastFocus = { lat: 39.92, lon: 32.85 };
 let activeTool = null;
 let pickMode = null; // circle | arc | savept | measure1 | measure2
 let measureKind = "measure";
@@ -41,6 +42,8 @@ let measurePts = [];
 let areaPts = [];
 let drawLine = null;
 let drawing = false;
+let drawPointers = new Set();
+let drawMultiTouch = false;
 let drawStrokes = [];
 let pendingShape = null;
 let nameCallback = null;
@@ -142,6 +145,9 @@ function getPointById(id) {
 
 function exitDrawMode(clearStrokes = true) {
   if (clearStrokes) drawStrokes = [];
+  discardCurrentStroke();
+  drawPointers.clear();
+  drawMultiTouch = false;
   $("#drawBar").hidden = true;
   resetMapInteractions();
 }
@@ -190,8 +196,8 @@ function setTool(name) {
     map.dragging.disable();
     map.getContainer().classList.add("draw-mode");
     $("#drawBar").hidden = false;
-    setModeBanner("Kalem: çizin — bitince Kaydet");
-    toast("Kalemi kaldırınca devam eder; Kaydet ile kaydedilir");
+    setModeBanner("Kalem: tek parmak çiz, iki parmak gez");
+    toast("Tek parmak: çiz · İki parmak: haritada gez");
   } else if (name === "weather") {
     refreshWeather();
     activeTool = null;
@@ -354,8 +360,8 @@ function initMap() {
   const container = map.getContainer();
   container.addEventListener("pointerdown", onDrawStart, { passive: false });
   window.addEventListener("pointermove", onDrawMove, { passive: false });
-  window.addEventListener("pointerup", onDrawEnd);
-  window.addEventListener("pointercancel", onDrawEnd);
+  window.addEventListener("pointerup", onDrawPointerUp);
+  window.addEventListener("pointercancel", onDrawPointerUp);
 
   renderSaved();
 }
@@ -500,12 +506,34 @@ function eventToLatLng(e) {
   return map ? map.mouseEventToLatLng(e) : null;
 }
 
+function discardCurrentStroke() {
+  if (drawLine) {
+    tempLayer.removeLayer(drawLine);
+    drawLine = null;
+  }
+  drawing = false;
+}
+
 function onDrawStart(e) {
   if (activeTool !== "draw") return;
   if (e.target.closest?.(".leaflet-control, .draw-bar, .toolbar, .topbar, button, .sheet, .sheet-backdrop")) {
     return;
   }
+
+  drawPointers.add(e.pointerId);
+
+  // İki parmak / çoklu dokunuş → çizme, haritayı gez
+  if (drawPointers.size > 1) {
+    drawMultiTouch = true;
+    discardCurrentStroke();
+    map.dragging.enable();
+    return;
+  }
+
+  if (drawMultiTouch) return;
+
   e.preventDefault();
+  map.dragging.disable();
   const ll = eventToLatLng(e);
   if (!ll) return;
   drawing = true;
@@ -513,6 +541,8 @@ function onDrawStart(e) {
 }
 
 function onDrawMove(e) {
+  if (activeTool !== "draw") return;
+  if (drawMultiTouch || drawPointers.size > 1) return;
   if (!drawing || !drawLine) return;
   e.preventDefault();
   const ll = eventToLatLng(e);
@@ -520,7 +550,28 @@ function onDrawMove(e) {
   drawLine.addLatLng([ll.lat, ll.lng]);
 }
 
-function onDrawEnd() {
+function onDrawPointerUp(e) {
+  if (activeTool !== "draw") {
+    drawPointers.clear();
+    drawMultiTouch = false;
+    return;
+  }
+
+  drawPointers.delete(e.pointerId);
+
+  if (drawMultiTouch) {
+    if (drawPointers.size === 0) {
+      drawMultiTouch = false;
+      map.dragging.disable();
+      setModeBanner(
+        drawStrokes.length
+          ? `${drawStrokes.length} çizgi — Kaydet ile kaydedin`
+          : "Kalem: tek parmak çiz, iki parmak gez"
+      );
+    }
+    return;
+  }
+
   if (!drawing) return;
   drawing = false;
   if (drawLine) {
@@ -534,7 +585,7 @@ function onDrawEnd() {
     setModeBanner(
       drawStrokes.length
         ? `${drawStrokes.length} çizgi — Kaydet ile kaydedin`
-        : "Kalem: çizin — bitince Kaydet"
+        : "Kalem: tek parmak çiz, iki parmak gez"
     );
   }
 }
@@ -811,9 +862,12 @@ function renderLists() {
   pl.innerHTML = state.points.length
     ? state.points
         .map(
-          (p) => `<li>
-        <div class="meta"><div class="name">${escapeHtml(p.name)}</div><div class="sub">${escapeHtml(p.mgrs || "")}</div></div>
-        <button type="button" class="btn icon" data-goto="${escapeHtml(p.id)}">➤</button>
+          (p, i) => `<li>
+        <div class="meta" data-go-kind="point" data-go-i="${i}">
+          <div class="name">${escapeHtml(p.name)}</div>
+          <div class="sub">${escapeHtml(p.mgrs || "")}</div>
+        </div>
+        <button type="button" class="btn icon" data-go-kind="point" data-go-i="${i}" title="Git">➤</button>
         <button type="button" class="btn icon danger" data-del-pt="${escapeHtml(p.id)}">🗑</button>
       </li>`
         )
@@ -839,7 +893,11 @@ function renderLists() {
     ? items
         .map(
           (x) => `<li>
-        <div class="meta"><div class="name">${escapeHtml(x.name)}</div><div class="sub">${escapeHtml(x.sub)}</div></div>
+        <div class="meta" data-go-kind="${x.kind}" data-go-i="${x.i}">
+          <div class="name">${escapeHtml(x.name)}</div>
+          <div class="sub">${escapeHtml(x.sub)}</div>
+        </div>
+        <button type="button" class="btn icon" data-go-kind="${x.kind}" data-go-i="${x.i}" title="Git">➤</button>
         <button type="button" class="btn icon danger" data-del-kind="${x.kind}" data-del-i="${x.i}">🗑</button>
       </li>`
         )
@@ -848,7 +906,11 @@ function renderLists() {
 }
 
 async function updateInfo(lat, lon, opts = {}) {
-  $("#infoMgrs").textContent = toMgrs(lat, lon);
+  lastFocus = { lat, lon };
+  const mgrs = toMgrs(lat, lon);
+  $("#infoMgrs").textContent = mgrs;
+  const llEl = $("#infoLl");
+  if (llEl) llEl.textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
   if (lastGps && !opts.fromMap) {
     $("#infoAcc").textContent = lastGps.acc != null ? `±${Math.round(lastGps.acc)} m` : "—";
   }
@@ -862,6 +924,63 @@ async function updateInfo(lat, lon, opts = {}) {
     if (elev != null) $("#infoElev").textContent = `${Math.round(elev)} m`;
     if (slope != null) $("#infoSlope").textContent = `%${slope.toFixed(1)}`;
   } catch (_) {}
+}
+
+async function copyText(text) {
+  const t = String(text || "").trim();
+  if (!t || t === "—") return toast("Kopyalanacak yok");
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(t);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = t;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    toast("Kopyalandı");
+  } catch (_) {
+    toast("Kopyalanamadı");
+  }
+}
+
+function itemCenter(kind, index) {
+  if (kind === "point") {
+    const p = state.points[index];
+    return p ? { lat: p.lat, lon: p.lon, zoom: 16 } : null;
+  }
+  if (kind === "shape") {
+    const sh = state.shapes[index];
+    if (!sh) return null;
+    if (sh.center) return { lat: sh.center.lat, lon: sh.center.lon, zoom: 15 };
+    if (sh.pts?.length) {
+      const c = centroid(sh.pts);
+      return { lat: c.lat, lon: c.lon, zoom: 15 };
+    }
+  }
+  if (kind === "draw") {
+    const d = state.drawings[index];
+    if (!d) return null;
+    if (d.labelLat != null) return { lat: d.labelLat, lon: d.labelLon, zoom: 15 };
+    const stroke = d.strokes?.[0] || d.pts;
+    if (stroke?.length) {
+      const midPt = stroke[Math.floor(stroke.length / 2)];
+      return { lat: midPt.lat, lon: midPt.lon, zoom: 15 };
+    }
+  }
+  return null;
+}
+
+function goToItem(kind, index) {
+  const c = itemCenter(kind, index);
+  if (!c) return toast("Konum yok");
+  map.setView([c.lat, c.lon], c.zoom || 15);
+  updateInfo(c.lat, c.lon);
+  closeSheets();
 }
 
 async function refreshWeather() {
@@ -886,6 +1005,10 @@ function startGps() {
       lastGps = { lat, lon, acc, alt };
       $("#infoAcc").textContent = acc != null ? `±${Math.round(acc)} m (GPS)` : "—";
       if (alt != null) $("#infoElev").textContent = `${Math.round(alt)} m (GPS)`;
+      lastFocus = { lat, lon };
+      $("#infoMgrs").textContent = toMgrs(lat, lon);
+      const llEl = $("#infoLl");
+      if (llEl) llEl.textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
       if (!gpsMarker) {
         gpsMarker = L.circleMarker([lat, lon], {
           radius: 8,
@@ -905,7 +1028,6 @@ function startGps() {
         gpsAccuracy.setLatLng([lat, lon]);
         gpsAccuracy.setRadius(acc || 20);
       }
-      $("#infoMgrs").textContent = toMgrs(lat, lon);
     },
     (err) => toast("Konum: " + (err.message || "hata")),
     { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 }
@@ -1200,30 +1322,40 @@ function bindUi() {
   });
 
   $("#pointsList").addEventListener("click", (e) => {
-    const go = e.target.closest("[data-goto]");
     const del = e.target.closest("[data-del-pt]");
-    if (go) {
-      const p = state.points.find((x) => x.id === go.dataset.goto);
-      if (p) {
-        map.setView([p.lat, p.lon], 16);
-        closeSheets();
-      }
-    }
+    const go = e.target.closest("[data-go-kind]");
     if (del) {
       state.points = state.points.filter((x) => x.id !== del.dataset.delPt);
       persist();
       renderSaved();
+      return;
+    }
+    if (go) {
+      goToItem(go.dataset.goKind, Number(go.dataset.goI));
     }
   });
 
   $("#shapesList").addEventListener("click", (e) => {
     const del = e.target.closest("[data-del-kind]");
-    if (!del) return;
-    const i = Number(del.dataset.delI);
-    if (del.dataset.delKind === "shape") state.shapes.splice(i, 1);
-    else state.drawings.splice(i, 1);
-    persist();
-    renderSaved();
+    const go = e.target.closest("[data-go-kind]");
+    if (del) {
+      const i = Number(del.dataset.delI);
+      if (del.dataset.delKind === "shape") state.shapes.splice(i, 1);
+      else state.drawings.splice(i, 1);
+      persist();
+      renderSaved();
+      return;
+    }
+    if (go) {
+      goToItem(go.dataset.goKind, Number(go.dataset.goI));
+    }
+  });
+
+  $("#infoMgrs").addEventListener("click", () => {
+    copyText($("#infoMgrs").textContent);
+  });
+  $("#infoLl")?.addEventListener("click", () => {
+    copyText($("#infoLl").textContent);
   });
 
   window.addEventListener("online", setNetDot);

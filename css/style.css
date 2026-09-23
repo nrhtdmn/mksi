@@ -171,6 +171,14 @@ html, body {
   font-family: ui-monospace, Consolas, monospace;
   color: var(--accent-2);
 }
+.info-strip .copyable {
+  cursor: pointer;
+  text-decoration: underline dotted rgba(232, 184, 74, 0.45);
+  text-underline-offset: 2px;
+}
+.info-strip .copyable:active {
+  color: #fff;
+}
 
 /* Compact 3-column toolbar for phones */
 .toolbar {
@@ -367,6 +375,10 @@ html, body {
 .list li .meta {
   flex: 1;
   min-width: 0;
+  cursor: pointer;
+}
+.list li .meta:active .name {
+  color: var(--accent-2);
 }
 .list li .name { font-weight: 600; }
 .list li .sub {
