@@ -13,7 +13,8 @@ import {
   saveState,
   exportJson,
   parseImport,
-  shareOrDownload,
+  shareFile,
+  downloadJson,
   exportFileName,
 } from "./storage.js";
 import { getSlopeNear, getWeather } from "./weather.js";
@@ -1746,11 +1747,11 @@ async function shareItem(kind, index) {
   }
   const stamp = dateStamp();
   const filename = exportFileName(name, stamp);
-  const r = await shareOrDownload(filename, JSON.stringify(payload, null, 2), name);
-  if (r === "download+shared" || r === "shared-file") toast(`İndirildi + paylaşım: ${filename}`);
-  else if (r === "download") toast(`Dosya indirildi: ${filename}`);
+  const r = await shareFile(filename, JSON.stringify(payload, null, 2), name);
+  if (r === "shared-file") toast(`Paylaşım açıldı: ${filename}`);
   else if (r === "shared") toast("Paylaşım açıldı");
-  else if (r !== "abort") toast("Dosya dışa aktarılamadı");
+  else if (r === "download-fallback") toast(`Paylaşım yok — dosya indirildi: ${filename}`);
+  else if (r !== "abort") toast("Paylaşılamadı");
 }
 
 function dateStamp() {
@@ -2080,32 +2081,53 @@ function bindUi() {
   $("#btnDrawClear").addEventListener("click", clearDrawStrokes);
   $("#btnDrawSave").addEventListener("click", saveDrawStrokes);
 
-  async function toastShareResult(r, filename) {
-    if (r === "download+shared" || r === "shared-file") toast(`İndirildi + paylaşım: ${filename}`);
-    else if (r === "download") toast(`Dosya indirildi: ${filename}`);
+  async function toastShareOnly(r, filename) {
+    if (r === "shared-file") toast(`Paylaşım açıldı: ${filename}`);
     else if (r === "shared") toast("Paylaşım açıldı");
+    else if (r === "download-fallback") toast(`Paylaşım yok — dosya indirildi: ${filename}`);
     else if (r !== "abort") toast("Paylaşılamadı");
+  }
+  async function toastDownloadOnly(r, filename) {
+    if (r === "download") toast(`Dosya indirildi: ${filename}`);
+    else toast("Dosya indirilemedi");
   }
 
   $("#btnShareAll").addEventListener("click", async () => {
-    const stamp = dateStamp();
-    const filename = exportFileName("MKSI", stamp);
-    const r = await shareOrDownload(filename, exportJson(state, "all"), "MKSI — Tümü");
-    await toastShareResult(r, filename);
+    const filename = exportFileName("MKSI", dateStamp());
+    await toastShareOnly(
+      await shareFile(filename, exportJson(state, "all"), "MKSI — Tümü"),
+      filename
+    );
+  });
+  $("#btnExportAll").addEventListener("click", async () => {
+    const filename = exportFileName("MKSI", dateStamp());
+    await toastDownloadOnly(await downloadJson(filename, exportJson(state, "all")), filename);
   });
   $("#btnSharePts").addEventListener("click", async () => {
     if (!state.points.length) return toast("Paylaşılacak nokta yok");
-    const stamp = dateStamp();
-    const filename = exportFileName("Noktalar", stamp);
-    const r = await shareOrDownload(filename, exportJson(state, "points"), "MKSI — Noktalar");
-    await toastShareResult(r, filename);
+    const filename = exportFileName("Noktalar", dateStamp());
+    await toastShareOnly(
+      await shareFile(filename, exportJson(state, "points"), "MKSI — Noktalar"),
+      filename
+    );
+  });
+  $("#btnExportPts").addEventListener("click", async () => {
+    if (!state.points.length) return toast("Dışa aktarılacak nokta yok");
+    const filename = exportFileName("Noktalar", dateStamp());
+    await toastDownloadOnly(await downloadJson(filename, exportJson(state, "points")), filename);
   });
   $("#btnShareShapes").addEventListener("click", async () => {
     if (!state.shapes.length && !state.drawings.length) return toast("Paylaşılacak şekil yok");
-    const stamp = dateStamp();
-    const filename = exportFileName("Sekiller", stamp);
-    const r = await shareOrDownload(filename, exportJson(state, "shapes"), "MKSI — Şekiller");
-    await toastShareResult(r, filename);
+    const filename = exportFileName("Sekiller", dateStamp());
+    await toastShareOnly(
+      await shareFile(filename, exportJson(state, "shapes"), "MKSI — Şekiller"),
+      filename
+    );
+  });
+  $("#btnExportShapes").addEventListener("click", async () => {
+    if (!state.shapes.length && !state.drawings.length) return toast("Dışa aktarılacak şekil yok");
+    const filename = exportFileName("Sekiller", dateStamp());
+    await toastDownloadOnly(await downloadJson(filename, exportJson(state, "shapes")), filename);
   });
   $("#btnResultShare")?.addEventListener("click", async () => {
     if (!pendingShape) return toast("Paylaşılacak sonuç yok");
@@ -2114,16 +2136,17 @@ function bindUi() {
       "Şekil";
     const sh = { ...pendingShape, name };
     if (sh.type === "area") sh.color = $("#resultColor")?.value || sh.color || "#4a9fd4";
-    const stamp = dateStamp();
-    const filename = exportFileName(name, stamp);
+    const filename = exportFileName(name, dateStamp());
     const payload = {
       app: "MKSI",
       version: 1,
       exportedAt: new Date().toISOString(),
       shapes: [sh],
     };
-    const r = await shareOrDownload(filename, JSON.stringify(payload, null, 2), `MKSI — ${name}`);
-    await toastShareResult(r, filename);
+    await toastShareOnly(
+      await shareFile(filename, JSON.stringify(payload, null, 2), `MKSI — ${name}`),
+      filename
+    );
   });
   async function applyImportText(text) {
     const data = parseImport(text);

@@ -323,14 +323,17 @@
     <div class="sheet-body">
       <div class="actions" style="margin-bottom:14px">
         <button type="button" class="btn accent" id="btnShareAll">Tümünü paylaş</button>
+        <button type="button" class="btn" id="btnExportAll">Tümünü dışa aktar</button>
         <button type="button" class="btn" id="btnSharePts">Noktaları paylaş</button>
+        <button type="button" class="btn" id="btnExportPts">Noktaları dışa aktar</button>
         <button type="button" class="btn" id="btnShareShapes">Şekil / çizimleri paylaş</button>
+        <button type="button" class="btn" id="btnExportShapes">Şekil / çizimleri dışa aktar</button>
         <button type="button" class="btn" id="btnImport">Dosyadan içe aktar</button>
         <button type="button" class="btn" id="btnImportPaste">Panodan içe aktar</button>
         <button type="button" class="btn danger" id="btnClearAll">Her şeyi sil</button>
       </div>
       <input type="file" id="importFile" accept="application/json,.json,.txt,text/plain" class="hidden" />
-      <p class="hint">Paylaş: dosya iner ve WhatsApp / Bip açılır (ek olarak gönderin). Diğer cihazda dosya veya panodan içe aktarın.</p>
+      <p class="hint"><strong>Paylaş</strong> = WhatsApp / Bip paneli (ek). <strong>Dışa aktar</strong> = yalnızca dosya indir. Diğer cihazda dosya veya panodan içe aktarın.</p>
       <h3 class="list-title">Kayıtlı noktalar</h3>
       <ul class="list" id="pointsList"></ul>
       <h3 class="list-title">Şekiller / çizimler</h3>
