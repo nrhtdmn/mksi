@@ -763,7 +763,7 @@ function onDrawStart(e) {
   if (e.pointerType === "mouse" && e.button !== 0) return;
   if (
     e.target.closest?.(
-      ".leaflet-control, .draw-bar, .toolbar, .topbar, .chrome-fab, .locate-fab, .center-fab, button, .sheet, .sheet-backdrop"
+      ".leaflet-control, .draw-bar, .toolbar, .topbar, .locate-fab, .center-fab, button, .sheet, .sheet-backdrop"
     )
   ) {
     return;
@@ -1541,15 +1541,11 @@ function onCenterAction() {
 function applyChromeHidden(hidden) {
   const app = $("#app");
   const topBtn = $("#btnChromeToggle");
-  const fab = $("#btnChromeFab");
   const on = !!hidden;
   app.classList.toggle("chrome-hidden", on);
   if (topBtn) {
     topBtn.textContent = on ? "Göster" : "Gizle";
     topBtn.title = on ? "Alt menüyü göster" : "Alt menüyü gizle";
-  }
-  if (fab) {
-    fab.hidden = !on;
   }
   state.settings.chromeHidden = on;
   setTimeout(() => map?.invalidateSize(), 80);
@@ -1788,7 +1784,6 @@ function mergeById(a, b) {
 function bindUi() {
   $("#btnLocate").addEventListener("click", goToLocation);
   $("#btnChromeToggle").addEventListener("click", toggleChrome);
-  $("#btnChromeFab")?.addEventListener("click", toggleChrome);
   $("#btnCenterAction")?.addEventListener("click", onCenterAction);
   $("#btnMenu").addEventListener("click", () => {
     renderLists();
