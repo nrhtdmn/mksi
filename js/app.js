@@ -265,6 +265,7 @@ function onMapClick(e) {
         ],
         { color: "#3d9a6a", weight: 3 }
       ).addTo(tempLayer);
+      labelMeasureLine(tempLayer, a, b, dist, mil);
       const html =
         activeTool === "measure"
           ? `<strong>Mesafe:</strong> ${fmtDist(dist)}<br/><strong>İstikamet:</strong> ${mil} milyem<br/><strong>A→B:</strong> ${toMgrs(a.lat, a.lon)} → ${toMgrs(b.lat, b.lon)}`
@@ -319,6 +320,7 @@ function finishArea() {
     areaPts.map((p) => [p.lat, p.lon]),
     { color: "#4a9fd4", weight: 2, fillOpacity: 0.2 }
   ).addTo(tempLayer);
+  labelArea(tempLayer, areaPts, area);
   pendingShape = { type: "area", pts: [...areaPts], area };
   showResult("Alan", `<strong>Alan:</strong> ${fmtArea(area)}<br/><strong>Köşe:</strong> ${areaPts.length}`);
   areaPts = [];
@@ -370,11 +372,94 @@ function showResult(title, html) {
   openSheet("#sheetResult");
 }
 
+/** Permanent text label on map */
+function addMapLabel(layer, lat, lon, html, multi = false) {
+  const icon = L.divIcon({
+    className: "map-label-icon",
+    html: `<div class="map-label${multi ? " multi" : ""}">${html}</div>`,
+    iconSize: [0, 0],
+    iconAnchor: [0, 0],
+  });
+  return L.marker([lat, lon], { icon, interactive: false, keyboard: false }).addTo(layer);
+}
+
+function midLatLng(a, b) {
+  return { lat: (a.lat + b.lat) / 2, lon: (a.lon + b.lon) / 2 };
+}
+
+function centroid(pts) {
+  let lat = 0;
+  let lon = 0;
+  for (const p of pts) {
+    lat += p.lat;
+    lon += p.lon;
+  }
+  return { lat: lat / pts.length, lon: lon / pts.length };
+}
+
+function labelMeasureLine(layer, a, b, dist, mil) {
+  const mid = midLatLng(a, b);
+  addMapLabel(
+    layer,
+    mid.lat,
+    mid.lon,
+    `<span class="hl">${fmtDist(dist)}</span><br/>${mil} milyem`,
+    true
+  );
+}
+
+function labelCircle(layer, lat, lon, radius) {
+  const edge = destination(lat, lon, 1600, radius); // doğu kenarı
+  addMapLabel(
+    layer,
+    edge.lat,
+    edge.lon,
+    `r <span class="hl">${fmtDist(radius)}</span>`
+  );
+  addMapLabel(
+    layer,
+    lat,
+    lon,
+    `<span class="hl">${fmtArea(circleArea(radius))}</span>`
+  );
+}
+
+function labelArc(layer, lat, lon, mainMil, dist, left, right, startMil, endMil) {
+  const midPt = destination(lat, lon, mainMil, dist);
+  const leftPt = destination(lat, lon, startMil, dist);
+  const rightPt = destination(lat, lon, endMil, dist);
+  const midRay = midLatLng({ lat, lon }, midPt);
+  addMapLabel(
+    layer,
+    midRay.lat,
+    midRay.lon,
+    `<span class="hl">${mainMil}</span> milyem<br/>${fmtDist(dist)}`,
+    true
+  );
+  addMapLabel(layer, leftPt.lat, leftPt.lon, `Sol <span class="hl">${left}</span>`);
+  addMapLabel(layer, rightPt.lat, rightPt.lon, `Sağ <span class="hl">${right}</span>`);
+}
+
+function labelArea(layer, pts, area) {
+  const c = centroid(pts);
+  addMapLabel(layer, c.lat, c.lon, `<span class="hl">${fmtArea(area)}</span>`);
+}
+
 function drawCircleAt(lat, lon) {
   const r = Number($("#circleRadius").value) || 500;
   clearTemp();
   L.circle([lat, lon], { radius: r, color: "#3d9a6a", fillOpacity: 0.15, weight: 2 }).addTo(tempLayer);
   L.circleMarker([lat, lon], { radius: 5, color: "#e8b84a", fillOpacity: 1 }).addTo(tempLayer);
+  // yarıçap çizgisi
+  const edge = destination(lat, lon, 1600, r);
+  L.polyline(
+    [
+      [lat, lon],
+      [edge.lat, edge.lon],
+    ],
+    { color: "#e8b84a", weight: 2, dashArray: "4 4" }
+  ).addTo(tempLayer);
+  labelCircle(tempLayer, lat, lon, r);
   const area = circleArea(r);
   const html = `<strong>Yarıçap:</strong> ${fmtDist(r)}<br/><strong>Alan:</strong> ${fmtArea(area)}<br/><strong>Merkez MGRS:</strong> ${toMgrs(lat, lon)}`;
   $("#circleResult").innerHTML = html;
@@ -391,7 +476,6 @@ function drawArcAt(lat, lon) {
   const { pts, startMil, endMil, mainMil } = arcPoints(lat, lon, main, dist, left, right);
   const latlngs = pts.map((p) => [p.lat, p.lon]);
   L.polyline(latlngs, { color: "#e8b84a", weight: 3 }).addTo(tempLayer);
-  // rays to flanks
   const leftPt = destination(lat, lon, startMil, dist);
   const rightPt = destination(lat, lon, endMil, dist);
   const midPt = destination(lat, lon, mainMil, dist);
@@ -417,6 +501,7 @@ function drawArcAt(lat, lon) {
     { color: "#d64545", weight: 1 }
   ).addTo(tempLayer);
   L.circleMarker([lat, lon], { radius: 5, color: "#fff", fillOpacity: 1 }).addTo(tempLayer);
+  labelArc(tempLayer, lat, lon, mainMil, dist, left, right, startMil, endMil);
 
   const html =
     `<strong>İstikamet:</strong> ${mainMil} milyem<br/>` +
@@ -488,11 +573,41 @@ function addShapeToLayer(sh, layer) {
       fillOpacity: 0.12,
       weight: 2,
     }).addTo(layer);
+    const edge = destination(sh.center.lat, sh.center.lon, 1600, sh.radius);
+    L.polyline(
+      [
+        [sh.center.lat, sh.center.lon],
+        [edge.lat, edge.lon],
+      ],
+      { color: "#e8b84a", weight: 2, dashArray: "4 4" }
+    ).addTo(layer);
+    labelCircle(layer, sh.center.lat, sh.center.lon, sh.radius);
   } else if (sh.type === "arc" && sh.pts) {
     L.polyline(
       sh.pts.map((p) => [p.lat, p.lon]),
       { color: "#e8b84a", weight: 3 }
     ).addTo(layer);
+    if (sh.center) {
+      const midPt = destination(sh.center.lat, sh.center.lon, sh.mainMil, sh.dist);
+      L.polyline(
+        [
+          [sh.center.lat, sh.center.lon],
+          [midPt.lat, midPt.lon],
+        ],
+        { color: "#3d9a6a", weight: 2, dashArray: "6 4" }
+      ).addTo(layer);
+      labelArc(
+        layer,
+        sh.center.lat,
+        sh.center.lon,
+        sh.mainMil,
+        sh.dist,
+        sh.left,
+        sh.right,
+        sh.startMil,
+        sh.endMil
+      );
+    }
   } else if ((sh.type === "measure" || sh.type === "bearing") && sh.pts?.length === 2) {
     L.polyline(
       [
@@ -501,11 +616,13 @@ function addShapeToLayer(sh, layer) {
       ],
       { color: "#3d9a6a", weight: 2 }
     ).addTo(layer);
+    labelMeasureLine(layer, sh.pts[0], sh.pts[1], sh.dist, sh.mil);
   } else if (sh.type === "area" && sh.pts) {
     L.polygon(
       sh.pts.map((p) => [p.lat, p.lon]),
       { color: "#4a9fd4", weight: 2, fillOpacity: 0.15 }
     ).addTo(layer);
+    labelArea(layer, sh.pts, sh.area);
   } else if (sh.type === "draw" && sh.pts) {
     L.polyline(
       sh.pts.map((p) => [p.lat, p.lon]),

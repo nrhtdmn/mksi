@@ -312,6 +312,30 @@ html, body {
 }
 .mode-banner.show { display: block; }
 
+/* Labels drawn on map shapes */
+.map-label {
+  background: rgba(15, 20, 25, 0.88);
+  border: 1px solid #2e3d52;
+  border-radius: 8px;
+  color: #e8eef4;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  padding: 4px 8px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  transform: translate(-50%, -50%);
+}
+.map-label .hl { color: #e8b84a; }
+.map-label.multi { white-space: normal; max-width: 140px; text-align: center; }
+
+.leaflet-div-icon.map-label-icon {
+  background: transparent;
+  border: none;
+}
+
 .layer-toggle {
   display: flex;
   background: var(--panel-2);
