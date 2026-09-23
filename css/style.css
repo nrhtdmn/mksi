@@ -486,7 +486,13 @@ html, body {
 }
 
 .hidden { display: none !important; }
-.leaflet-container.draw-mode { cursor: crosshair; }
+.leaflet-container.draw-mode {
+  cursor: crosshair;
+  touch-action: none !important;
+}
+.leaflet-container.draw-mode .leaflet-overlay-pane {
+  pointer-events: none;
+}
 
 @media (min-width: 560px) {
   .toolbar {

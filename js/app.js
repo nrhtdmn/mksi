@@ -56,6 +56,9 @@ let drawing = false;
 let drawPointers = new Set();
 let drawMultiTouch = false;
 let drawStrokes = [];
+let drawStrokePts = []; // current stroke [{lat,lon}]
+let drawLastPx = null; // {x,y} last pixel for spacing
+let drawPrimaryId = null;
 let pendingShape = null;
 let nameCallback = null;
 
@@ -126,7 +129,22 @@ function resetMapInteractions() {
   if (!map) return;
   map.dragging.enable();
   map.doubleClickZoom.enable();
-  map.getContainer().classList.remove("draw-mode");
+  if (map.touchZoom) map.touchZoom.enable();
+  if (map.scrollWheelZoom) map.scrollWheelZoom.enable();
+  if (map.tap) map.tap.enable();
+  const el = map.getContainer();
+  el.classList.remove("draw-mode");
+  el.style.touchAction = "";
+}
+
+function enterDrawInteractions() {
+  if (!map) return;
+  map.dragging.disable();
+  map.doubleClickZoom.disable();
+  if (map.tap) map.tap.disable();
+  const el = map.getContainer();
+  el.classList.add("draw-mode");
+  el.style.touchAction = "none";
 }
 
 function clearToolHighlight() {
@@ -208,11 +226,10 @@ function setTool(name) {
   } else if (name === "finishArea") {
     finishArea();
   } else if (name === "draw") {
-    map.dragging.disable();
-    map.getContainer().classList.add("draw-mode");
+    enterDrawInteractions();
     $("#drawBar").hidden = false;
     setModeBanner("Kalem: tek parmak çiz, iki parmak gez");
-    toast("Tek parmak: çiz · İki parmak: haritada gez");
+    toast("Tek parmak: çiz · İki parmak: gez");
   } else if (name === "weather") {
     refreshWeather();
     activeTool = null;
@@ -399,9 +416,14 @@ function initMap() {
 
   const container = map.getContainer();
   container.addEventListener("pointerdown", onDrawStart, { passive: false });
-  window.addEventListener("pointermove", onDrawMove, { passive: false });
-  window.addEventListener("pointerup", onDrawPointerUp);
-  window.addEventListener("pointercancel", onDrawPointerUp);
+  container.addEventListener("pointermove", onDrawMove, { passive: false });
+  container.addEventListener("pointerup", onDrawPointerUp);
+  container.addEventListener("pointercancel", onDrawPointerUp);
+  container.addEventListener("lostpointercapture", (e) => {
+    if (activeTool === "draw" && drawing && e.pointerId === drawPrimaryId) {
+      finishCurrentStroke();
+    }
+  });
 
   renderSaved();
 }
@@ -547,53 +569,137 @@ function finishArea() {
   clearToolHighlight();
 }
 
-/* —— Pen: multi-stroke; lift finger does NOT open save dialog —— */
+/* —— Kalem: akıcı serbest çizim —— */
+const DRAW_MIN_PX = 2; // pixel arası min mesafe (titreme azaltır)
+const DRAW_LINE_OPTS = {
+  color: "#e8b84a",
+  weight: 4,
+  opacity: 0.95,
+  lineCap: "round",
+  lineJoin: "round",
+  smoothFactor: 0,
+};
+
 function eventToLatLng(e) {
-  return map ? map.mouseEventToLatLng(e) : null;
+  if (!map) return null;
+  return map.mouseEventToLatLng(e);
+}
+
+function eventToContainerPoint(e) {
+  if (!map) return null;
+  return map.mouseEventToContainerPoint(e);
 }
 
 function discardCurrentStroke() {
   if (drawLine) {
-    tempLayer.removeLayer(drawLine);
+    try {
+      tempLayer.removeLayer(drawLine);
+    } catch (_) {}
     drawLine = null;
   }
   drawing = false;
+  drawStrokePts = [];
+  drawLastPx = null;
+  drawPrimaryId = null;
+}
+
+function finishCurrentStroke() {
+  if (!drawing) return;
+  drawing = false;
+  if (drawLine && drawStrokePts.length >= 2) {
+    drawStrokes.push(drawStrokePts.map((p) => ({ lat: p.lat, lon: p.lon })));
+  } else if (drawLine) {
+    try {
+      tempLayer.removeLayer(drawLine);
+    } catch (_) {}
+  }
+  drawLine = null;
+  drawStrokePts = [];
+  drawLastPx = null;
+  drawPrimaryId = null;
+  setModeBanner(
+    drawStrokes.length
+      ? `${drawStrokes.length} çizgi — Kaydet ile kaydedin`
+      : "Kalem: tek parmak çiz, iki parmak gez"
+  );
+}
+
+function appendDrawPoint(e) {
+  const ll = eventToLatLng(e);
+  const px = eventToContainerPoint(e);
+  if (!ll || !px || !drawLine) return;
+
+  if (drawLastPx) {
+    const dx = px.x - drawLastPx.x;
+    const dy = px.y - drawLastPx.y;
+    if (dx * dx + dy * dy < DRAW_MIN_PX * DRAW_MIN_PX) return;
+  }
+
+  drawLastPx = { x: px.x, y: px.y };
+  drawStrokePts.push({ lat: ll.lat, lon: ll.lng });
+  drawLine.addLatLng([ll.lat, ll.lng]);
 }
 
 function onDrawStart(e) {
   if (activeTool !== "draw") return;
-  if (e.target.closest?.(".leaflet-control, .draw-bar, .toolbar, .topbar, button, .sheet, .sheet-backdrop")) {
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  if (
+    e.target.closest?.(
+      ".leaflet-control, .draw-bar, .toolbar, .topbar, .chrome-fab, .locate-fab, button, .sheet, .sheet-backdrop"
+    )
+  ) {
     return;
   }
 
   drawPointers.add(e.pointerId);
 
-  // İki parmak / çoklu dokunuş → çizme, haritayı gez
+  // İki parmak → çizimi bırak, haritayı gez
   if (drawPointers.size > 1) {
     drawMultiTouch = true;
     discardCurrentStroke();
     map.dragging.enable();
+    if (map.touchZoom) map.touchZoom.enable();
+    try {
+      map.getContainer().releasePointerCapture?.(e.pointerId);
+    } catch (_) {}
     return;
   }
 
   if (drawMultiTouch) return;
 
   e.preventDefault();
+  e.stopPropagation();
+
+  try {
+    map.getContainer().setPointerCapture(e.pointerId);
+  } catch (_) {}
+
   map.dragging.disable();
-  const ll = eventToLatLng(e);
-  if (!ll) return;
+  drawPrimaryId = e.pointerId;
   drawing = true;
-  drawLine = L.polyline([[ll.lat, ll.lng]], { color: "#e8b84a", weight: 3 }).addTo(tempLayer);
+  drawStrokePts = [];
+  drawLastPx = null;
+
+  const ll = eventToLatLng(e);
+  const px = eventToContainerPoint(e);
+  if (!ll || !px) {
+    drawing = false;
+    return;
+  }
+
+  drawLastPx = { x: px.x, y: px.y };
+  drawStrokePts.push({ lat: ll.lat, lon: ll.lng });
+  drawLine = L.polyline([[ll.lat, ll.lng]], DRAW_LINE_OPTS).addTo(tempLayer);
 }
 
 function onDrawMove(e) {
   if (activeTool !== "draw") return;
   if (drawMultiTouch || drawPointers.size > 1) return;
   if (!drawing || !drawLine) return;
+  if (drawPrimaryId != null && e.pointerId !== drawPrimaryId) return;
+
   e.preventDefault();
-  const ll = eventToLatLng(e);
-  if (!ll) return;
-  drawLine.addLatLng([ll.lat, ll.lng]);
+  appendDrawPoint(e);
 }
 
 function onDrawPointerUp(e) {
@@ -604,6 +710,12 @@ function onDrawPointerUp(e) {
   }
 
   drawPointers.delete(e.pointerId);
+
+  try {
+    if (map.getContainer().hasPointerCapture?.(e.pointerId)) {
+      map.getContainer().releasePointerCapture(e.pointerId);
+    }
+  } catch (_) {}
 
   if (drawMultiTouch) {
     if (drawPointers.size === 0) {
@@ -618,22 +730,9 @@ function onDrawPointerUp(e) {
     return;
   }
 
-  if (!drawing) return;
-  drawing = false;
-  if (drawLine) {
-    const latlngs = drawLine.getLatLngs();
-    if (latlngs.length >= 2) {
-      drawStrokes.push(latlngs.map((p) => ({ lat: p.lat, lon: p.lng })));
-    } else {
-      tempLayer.removeLayer(drawLine);
-    }
-    drawLine = null;
-    setModeBanner(
-      drawStrokes.length
-        ? `${drawStrokes.length} çizgi — Kaydet ile kaydedin`
-        : "Kalem: tek parmak çiz, iki parmak gez"
-    );
-  }
+  // pointercancel gelirse de mevcut çizgiyi kaydet (küçük kopuk parçalar olmasın)
+  if (drawPrimaryId != null && e.pointerId !== drawPrimaryId) return;
+  if (drawing) finishCurrentStroke();
 }
 
 function undoDrawStroke() {
@@ -645,19 +744,24 @@ function undoDrawStroke() {
 
 function clearDrawStrokes() {
   drawStrokes = [];
+  discardCurrentStroke();
   tempLayer.clearLayers();
   pendingShape = null;
-  setModeBanner("Kalem: çizin — bitince Kaydet");
+  setModeBanner("Kalem: tek parmak çiz, iki parmak gez");
 }
 
 function redrawDrawTemp() {
   tempLayer.clearLayers();
   pendingShape = null;
+  drawLine = null;
+  drawing = false;
   for (const stroke of drawStrokes) {
-    L.polyline(
-      stroke.map((p) => [p.lat, p.lon]),
-      { color: "#e8b84a", weight: 3 }
-    ).addTo(tempLayer);
+    if (stroke?.length) {
+      L.polyline(
+        stroke.map((p) => [p.lat, p.lon]),
+        DRAW_LINE_OPTS
+      ).addTo(tempLayer);
+    }
   }
 }
 
@@ -817,7 +921,7 @@ function renderSaved() {
         if (stroke?.length) {
           L.polyline(
             stroke.map((p) => [p.lat, p.lon]),
-            { color: "#e8b84a", weight: 3, opacity: 0.9 }
+            { ...DRAW_LINE_OPTS, opacity: 0.9 }
           ).addTo(savedLayer);
         }
       }
@@ -832,7 +936,7 @@ function renderSaved() {
     } else if (d.pts?.length) {
       L.polyline(
         d.pts.map((p) => [p.lat, p.lon]),
-        { color: "#e8b84a", weight: 3, opacity: 0.9 }
+        { ...DRAW_LINE_OPTS, opacity: 0.9 }
       ).addTo(savedLayer);
       if (d.name) {
         const midPt = d.pts[Math.floor(d.pts.length / 2)];
