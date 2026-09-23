@@ -123,26 +123,15 @@ export function parseImport(text) {
   };
 }
 
-/** Dosya olarak dışa aktar / paylaş — metin veya pano yok */
+/** Dosya indir + paylaşım paneli (WhatsApp / Bip ek olarak) */
 export async function shareOrDownload(filename, text, title = "MKSI") {
   const body = String(text);
   const safeName = String(filename || "mksi.json").replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_");
+  const blob = new Blob([body], { type: "application/json;charset=utf-8" });
 
-  // 1) Dosya paylaşımı (WhatsApp / Bip vb. destekleyen cihazlar)
+  // 1) Her zaman dosyayı indir
+  let downloaded = false;
   try {
-    const blob = new Blob([body], { type: "application/json;charset=utf-8" });
-    const file = new File([blob], safeName, { type: "application/json" });
-    if (navigator.share && navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ files: [file], title });
-      return "shared-file";
-    }
-  } catch (e) {
-    if (e.name === "AbortError") return "abort";
-  }
-
-  // 2) Dosya indir
-  try {
-    const blob = new Blob([body], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -150,11 +139,34 @@ export async function shareOrDownload(filename, text, title = "MKSI") {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
-    return "download";
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    downloaded = true;
   } catch (_) {}
 
-  return "fail";
+  // 2) Paylaşım paneli — ek olarak gönderilebilsin
+  if (navigator.share) {
+    try {
+      let file = new File([blob], safeName, { type: "application/json" });
+      if (!navigator.canShare?.({ files: [file] })) {
+        // WhatsApp / Bip çoğu cihazda text/plain ekini kabul eder
+        const txtName = safeName.replace(/\.json$/i, ".txt");
+        file = new File([body], txtName, { type: "text/plain" });
+      }
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title, text: title });
+        return downloaded ? "download+shared" : "shared-file";
+      }
+      await navigator.share({
+        title,
+        text: `${title}\n\n${safeName} indirildi. İçe aktarmak için dosyayı kullanın.`,
+      });
+      return downloaded ? "download+shared" : "shared";
+    } catch (e) {
+      if (e?.name === "AbortError") return downloaded ? "download" : "abort";
+    }
+  }
+
+  return downloaded ? "download" : "fail";
 }
 
 /** Dosya adı: şekil/çizim adı + tarih saat */

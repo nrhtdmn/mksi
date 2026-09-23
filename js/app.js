@@ -1751,8 +1751,9 @@ async function shareItem(kind, index) {
   const stamp = dateStamp();
   const filename = exportFileName(name, stamp);
   const r = await shareOrDownload(filename, JSON.stringify(payload, null, 2), name);
-  if (r === "shared-file") toast(`Dosya paylaşıldı: ${filename}`);
+  if (r === "download+shared" || r === "shared-file") toast(`İndirildi + paylaşım: ${filename}`);
   else if (r === "download") toast(`Dosya indirildi: ${filename}`);
+  else if (r === "shared") toast("Paylaşım açıldı");
   else if (r !== "abort") toast("Dosya dışa aktarılamadı");
 }
 
