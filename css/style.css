@@ -402,16 +402,22 @@ html, body {
 .list { list-style: none; }
 .list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 10px 0;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
 }
 .list li .meta {
-  flex: 1;
+  flex: 1 1 100%;
   min-width: 0;
   cursor: pointer;
+}
+.list li > .btn.icon {
+  flex: 0 0 auto;
+  min-width: 36px;
+  min-height: 36px;
 }
 .list li .meta:active .name {
   color: var(--accent-2);
@@ -453,36 +459,91 @@ html, body {
 }
 
 .map-label {
-  background: rgba(15, 20, 25, 0.9);
-  border: 1px solid #2e3d52;
-  border-radius: 8px;
-  color: #e8eef4;
-  font-size: 11px;
-  font-weight: 600;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
   line-height: 1.35;
-  padding: 4px 8px;
+  padding: 0;
   white-space: nowrap;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  box-shadow: none;
   pointer-events: none;
   font-variant-numeric: tabular-nums;
   transform: translate(-50%, -50%);
+  text-shadow:
+    0 0 4px rgba(0, 0, 0, 0.95),
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    1px 0 2px rgba(0, 0, 0, 0.9),
+    -1px 0 2px rgba(0, 0, 0, 0.9),
+    0 -1px 2px rgba(0, 0, 0, 0.9);
 }
-.map-label .hl { color: #e8b84a; }
+.map-label .hl {
+  color: #ffe08a;
+}
 .map-label .name {
-  color: #e8b84a;
+  color: #9fe8c4;
   display: block;
-  margin-bottom: 3px;
-  font-size: 12px;
-  font-weight: 700;
+  margin-bottom: 2px;
+  font-size: 13px;
+  font-weight: 800;
 }
 .map-label.multi {
   white-space: normal;
-  max-width: 180px;
+  max-width: 200px;
   text-align: center;
 }
 .leaflet-div-icon.map-label-icon {
-  background: transparent;
-  border: none;
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Ekran ortası artı */
+.crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  z-index: 800;
+  pointer-events: none;
+}
+.crosshair .ch-h,
+.crosshair .ch-v {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+}
+.crosshair .ch-h {
+  left: 8px;
+  right: 8px;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+}
+.crosshair .ch-v {
+  top: 8px;
+  bottom: 8px;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+}
+.crosshair .ch-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: #e8b84a;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
+.list .btn.icon {
+  font-size: 15px;
 }
 
 .color-row {

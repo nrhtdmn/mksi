@@ -1,17 +1,16 @@
-/** Local persistence — IndexedDB + localStorage fallback. No remote sync. */
+/** Local persistence — IndexedDB + localStorage. No remote sync. */
 
 const DB_NAME = "mksi-map";
 const DB_VER = 1;
 const STORE = "data";
+const KEY = "mksi-state-v1";
 
 function openDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VER);
     req.onupgradeneeded = () => {
       const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        db.createObjectStore(STORE);
-      }
+      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -38,13 +37,11 @@ async function idbSet(key, value) {
   });
 }
 
-const KEY = "mksi-state-v1";
-
 const defaultState = () => ({
   points: [],
   drawings: [],
   shapes: [],
-  settings: { layer: "hybrid", lastLat: 39.92, lastLon: 32.85, lastZoom: 12 },
+  settings: { layer: "hybrid", lastLat: 39.92, lastLon: 32.85, lastZoom: 12, chromeHidden: false },
 });
 
 export async function loadState() {
@@ -87,11 +84,21 @@ export function exportJson(state, filter = "all") {
     settings: state.settings || {},
   };
   if (filter === "points") {
-    return JSON.stringify({ app: all.app, version: 1, exportedAt: all.exportedAt, points: all.points }, null, 2);
+    return JSON.stringify(
+      { app: all.app, version: 1, exportedAt: all.exportedAt, points: all.points },
+      null,
+      2
+    );
   }
   if (filter === "shapes") {
     return JSON.stringify(
-      { app: all.app, version: 1, exportedAt: all.exportedAt, shapes: all.shapes, drawings: all.drawings },
+      {
+        app: all.app,
+        version: 1,
+        exportedAt: all.exportedAt,
+        shapes: all.shapes,
+        drawings: all.drawings,
+      },
       null,
       2
     );
@@ -100,7 +107,13 @@ export function exportJson(state, filter = "all") {
 }
 
 export function parseImport(text) {
-  const data = JSON.parse(text);
+  let raw = String(text || "").trim();
+  // WhatsApp / paylaşım metninden JSON bloğunu çıkar
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) raw = fence[1].trim();
+  const brace = raw.indexOf("{");
+  if (brace > 0) raw = raw.slice(brace);
+  const data = JSON.parse(raw);
   if (!data || typeof data !== "object") throw new Error("Geçersiz dosya");
   return {
     points: Array.isArray(data.points) ? data.points : [],
@@ -110,26 +123,55 @@ export function parseImport(text) {
   };
 }
 
-export async function shareOrDownload(filename, text) {
-  const blob = new Blob([text], { type: "application/json" });
-  const file = new File([blob], filename, { type: "application/json" });
-  if (navigator.share && navigator.canShare?.({ files: [file] })) {
-    await navigator.share({ files: [file], title: "MKSI veri", text: "MKSI harita verisi" });
-    return "shared";
-  }
+/** Mobil uyumlu paylaşım: önce metin paylaş, sonra panoya kopyala, sonra indir */
+export async function shareOrDownload(filename, text, title = "MKSI") {
+  const body = String(text);
+
+  // 1) Web Share — metin (WhatsApp / Bip / vs. mobil)
   if (navigator.share) {
     try {
-      await navigator.share({ title: "MKSI veri", text });
-      return "shared-text";
+      await navigator.share({ title, text: body });
+      return "shared";
     } catch (e) {
       if (e.name === "AbortError") return "abort";
     }
   }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-  return "download";
+
+  // 2) Dosya paylaşımı (destekleyen cihazlar)
+  try {
+    const blob = new Blob([body], { type: "text/plain;charset=utf-8" });
+    const file = new File([blob], filename.replace(/\.json$/i, ".txt"), {
+      type: "text/plain",
+    });
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title, text: title });
+      return "shared-file";
+    }
+  } catch (e) {
+    if (e.name === "AbortError") return "abort";
+  }
+
+  // 3) Panoya kopyala
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(body);
+      return "copied";
+    }
+  } catch (_) {}
+
+  // 4) İndir
+  try {
+    const blob = new Blob([body], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    return "download";
+  } catch (_) {}
+
+  return "fail";
 }

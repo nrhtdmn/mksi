@@ -28,8 +28,13 @@
     </header>
 
     <div id="map"></div>
+    <div class="crosshair" id="crosshair" aria-hidden="true">
+      <span class="ch-h"></span>
+      <span class="ch-v"></span>
+      <span class="ch-dot"></span>
+    </div>
     <div class="mode-banner" id="modeBanner"></div>
-    <button type="button" class="locate-fab" id="btnLocate" title="Konumuma git" aria-label="Konum">⌖</button>
+    <button type="button" class="locate-fab" id="btnLocate" title="Konumu ortala" aria-label="Konum">⌖</button>
     <button type="button" class="chrome-fab" id="btnChromeToggle" title="Alt menüyü gizle/göster" aria-label="Alt menü">▼</button>
 
     <div class="draw-bar" id="drawBar" hidden>
@@ -39,8 +44,9 @@
     </div>
 
     <div class="info-strip" id="infoStrip">
-      <div class="full"><span class="label">MGRS </span><span class="val mgrs copyable" id="infoMgrs" title="Kopyalamak için dokun">—</span></div>
-      <div class="full"><span class="label">Lat/Lon </span><span class="val copyable" id="infoLl" title="Kopyalamak için dokun">—</span></div>
+      <div class="full"><span class="label">MGRS </span><span class="val mgrs copyable" id="infoMgrs" title="Kopyala">—</span></div>
+      <div><span class="label">Lat </span><span class="val copyable" id="infoLat" title="Enlem kopyala">—</span></div>
+      <div><span class="label">Lon </span><span class="val copyable" id="infoLon" title="Boylam kopyala">—</span></div>
       <div><span class="label">Doğruluk </span><span class="val" id="infoAcc">—</span></div>
       <div><span class="label">Rakım </span><span class="val" id="infoElev">—</span></div>
       <div><span class="label">Eğim </span><span class="val" id="infoSlope">—</span></div>
@@ -56,64 +62,11 @@
       <button type="button" class="btn" data-tool="finishArea"><span class="ico">✓</span><span class="txt">Bitir</span></button>
       <button type="button" class="btn" data-tool="draw"><span class="ico">✎</span><span class="txt">Kalem</span></button>
       <button type="button" class="btn" data-tool="savept"><span class="ico">📍</span><span class="txt">Nokta</span></button>
-      <button type="button" class="btn" data-tool="parsel"><span class="ico">▣</span><span class="txt">Parsel</span></button>
       <button type="button" class="btn" data-tool="weather"><span class="ico">☁</span><span class="txt">Hava</span></button>
     </nav>
   </div>
 
   <div class="sheet-backdrop" id="backdrop"></div>
-
-  <div class="sheet" id="sheetParsel">
-    <div class="sheet-head">
-      <h2>Parsel sorgu</h2>
-      <button type="button" class="btn icon close-sheet">✕</button>
-    </div>
-    <div class="sheet-body">
-      <p class="hint">Kaynak: TKGM MEGSIS. Malik / tapu sahibi gösterilmez. Veriler resmi sistemden alınır.</p>
-      <div class="field">
-        <label>Yöntem</label>
-        <select id="parselMode">
-          <option value="map">Haritada noktaya dokun</option>
-          <option value="gps">Konumumdaki parsel</option>
-          <option value="ada">Ada / parsel gir</option>
-        </select>
-      </div>
-      <div id="parselAdaFields" class="hidden">
-        <div class="field">
-          <label>İl</label>
-          <select id="parselIl"><option value="">Yükleniyor…</option></select>
-        </div>
-        <div class="field">
-          <label>İlçe</label>
-          <select id="parselIlce"><option value="">Önce il seçin</option></select>
-        </div>
-        <div class="field">
-          <label>Mahalle / köy</label>
-          <select id="parselMahalle"><option value="">Önce ilçe seçin</option></select>
-        </div>
-        <div class="field-row">
-          <div class="field">
-            <label>Ada</label>
-            <input type="text" id="parselAda" placeholder="örn. 80146" />
-          </div>
-          <div class="field">
-            <label>Parsel</label>
-            <input type="text" id="parselNo" placeholder="örn. 9" />
-          </div>
-        </div>
-      </div>
-      <div class="field">
-        <label>İsim (kayıt için)</label>
-        <input type="text" id="parselName" placeholder="Boşsa ada/parsel kullanılır" maxlength="64" />
-      </div>
-      <div class="actions">
-        <button type="button" class="btn accent" id="btnParselGo">Sorgula</button>
-        <button type="button" class="btn" id="btnParselOfficial">Resmi TKGM sitesi</button>
-        <button type="button" class="btn" id="btnParselClear">Temizle</button>
-      </div>
-      <div class="result-box" id="parselResult"></div>
-    </div>
-  </div>
 
   <div class="sheet" id="sheetMeasure">
     <div class="sheet-head">
@@ -307,11 +260,12 @@
       <div class="actions" style="margin-bottom:14px">
         <button type="button" class="btn accent" id="btnExportAll">Tümünü dışa aktar</button>
         <button type="button" class="btn" id="btnExportPts">Sadece noktalar</button>
-        <button type="button" class="btn" id="btnImport">İçe aktar</button>
+        <button type="button" class="btn" id="btnImport">Dosyadan içe aktar</button>
+        <button type="button" class="btn" id="btnImportPaste">Panodan içe aktar</button>
         <button type="button" class="btn danger" id="btnClearAll">Her şeyi sil</button>
       </div>
-      <input type="file" id="importFile" accept="application/json,.json" class="hidden" />
-      <p class="hint">JSON WhatsApp / Bip ile paylaşılabilir. Veri tarayıcıda kalır.</p>
+      <input type="file" id="importFile" accept="application/json,.json,.txt,text/plain" class="hidden" />
+      <p class="hint">Paylaş / dışa aktar metnini WhatsApp veya Bip ile gönderin; diğer cihazda panodan veya dosyadan içe aktarın.</p>
       <h3 class="list-title">Kayıtlı noktalar</h3>
       <ul class="list" id="pointsList"></ul>
       <h3 class="list-title">Şekiller / çizimler</h3>

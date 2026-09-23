@@ -16,17 +16,6 @@ import {
   shareOrDownload,
 } from "./storage.js";
 import { getSlopeNear, getWeather } from "./weather.js";
-import {
-  fetchIller,
-  fetchIlceler,
-  fetchMahalleler,
-  fetchParselByCoord,
-  fetchParselByAda,
-  ringToLatLngs,
-  featureCenter,
-  summarizeParsel,
-  TKGM_SITE,
-} from "./parsel.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -306,10 +295,6 @@ function setTool(name) {
   } else if (name === "savept") {
     syncSavePtUi();
     openSheet("#sheetSavePt");
-  } else if (name === "parsel") {
-    openSheet("#sheetParsel");
-    syncParselModeUi();
-    ensureIllerLoaded();
   } else if (name === "area") {
     areaPts = [];
     clearTemp();
@@ -494,6 +479,13 @@ function initMap() {
   tempLayer.addTo(map);
   savedLayer.addTo(map);
 
+  map.on("move", () => {
+    const c = map.getCenter();
+    lastFocus = { lat: c.lat, lon: c.lng };
+    $("#infoMgrs").textContent = toMgrs(c.lat, c.lng);
+    $("#infoLat").textContent = c.lat.toFixed(6);
+    $("#infoLon").textContent = c.lng.toFixed(6);
+  });
   map.on("moveend", () => {
     const c = map.getCenter();
     updateInfo(c.lat, c.lng, { fromMap: true });
@@ -562,12 +554,6 @@ function onMapClick(e) {
     closeSheets();
     return;
   }
-  if (pickMode === "parsel") {
-    pickMode = null;
-    setModeBanner("");
-    queryParselAt(lat, lon);
-    return;
-  }
   if (pickMode === "measure1") {
     measurePts = [{ lat, lon }];
     L.circleMarker([lat, lon], { radius: 6, color: "#e8b84a", fillOpacity: 1 }).addTo(tempLayer);
@@ -601,8 +587,6 @@ function onMapClick(e) {
     setModeBanner(`${areaPts.length} köşe — Bitir ile tamamla`);
     return;
   }
-
-  updateInfo(lat, lon, { fromMap: true });
 }
 
 function finishMeasureLine(a, b) {
@@ -1147,6 +1131,8 @@ function renderLists() {
           <div class="sub">${escapeHtml(p.mgrs || "")}</div>
         </div>
         <button type="button" class="btn icon" data-go-kind="point" data-go-i="${i}" title="Git">➤</button>
+        <button type="button" class="btn icon" data-route-kind="point" data-route-i="${i}" title="Rota">🧭</button>
+        <button type="button" class="btn icon" data-share-kind="point" data-share-i="${i}" title="Paylaş">📤</button>
         <button type="button" class="btn icon danger" data-del-pt="${escapeHtml(p.id)}">🗑</button>
       </li>`
         )
@@ -1181,6 +1167,8 @@ function renderLists() {
           <div class="sub">${escapeHtml(x.sub)}</div>
         </div>
         <button type="button" class="btn icon" data-go-kind="${x.kind}" data-go-i="${x.i}" title="Git">➤</button>
+        <button type="button" class="btn icon" data-route-kind="${x.kind}" data-route-i="${x.i}" title="Rota">🧭</button>
+        <button type="button" class="btn icon" data-share-kind="${x.kind}" data-share-i="${x.i}" title="Paylaş">📤</button>
         ${x.editable ? `<button type="button" class="btn icon" data-edit-shape="${x.i}" title="Düzenle">✎</button>` : ""}
         <button type="button" class="btn icon danger" data-del-kind="${x.kind}" data-del-i="${x.i}">🗑</button>
       </li>`
@@ -1193,8 +1181,8 @@ async function updateInfo(lat, lon, opts = {}) {
   lastFocus = { lat, lon };
   const mgrs = toMgrs(lat, lon);
   $("#infoMgrs").textContent = mgrs;
-  const llEl = $("#infoLl");
-  if (llEl) llEl.textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+  $("#infoLat").textContent = lat.toFixed(6);
+  $("#infoLon").textContent = lon.toFixed(6);
   if (lastGps && !opts.fromMap) {
     $("#infoAcc").textContent = lastGps.acc != null ? `±${Math.round(lastGps.acc)} m` : "—";
   }
@@ -1289,10 +1277,6 @@ function startGps() {
       lastGps = { lat, lon, acc, alt };
       $("#infoAcc").textContent = acc != null ? `±${Math.round(acc)} m (GPS)` : "—";
       if (alt != null) $("#infoElev").textContent = `${Math.round(alt)} m (GPS)`;
-      lastFocus = { lat, lon };
-      $("#infoMgrs").textContent = toMgrs(lat, lon);
-      const llEl = $("#infoLl");
-      if (llEl) llEl.textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
       if (!gpsMarker) {
         gpsMarker = L.circleMarker([lat, lon], {
           radius: 8,
@@ -1375,152 +1359,98 @@ function syncSavePtUi() {
   $("#savePtLlWrap").classList.toggle("hidden", fmt !== "ll");
 }
 
-function syncParselModeUi() {
-  $("#parselAdaFields").classList.toggle("hidden", $("#parselMode").value !== "ada");
+function fmtDateTime(d = new Date()) {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}.${mm}.${yyyy} ${hh}:${mi}`;
 }
 
-let illerLoaded = false;
-
-async function ensureIllerLoaded() {
-  if (illerLoaded) return;
-  const sel = $("#parselIl");
-  try {
-    sel.innerHTML = `<option value="">Yükleniyor…</option>`;
-    const list = await fetchIller();
-    sel.innerHTML =
-      `<option value="">İl seçin</option>` +
-      list.map((x) => `<option value="${x.id}">${escapeHtml(x.text)}</option>`).join("");
-    illerLoaded = true;
-  } catch (e) {
-    sel.innerHTML = `<option value="">İller alınamadı</option>`;
-    toast("İl listesi alınamadı (internet?)");
+function getItemAnchor(kind, index) {
+  if (kind === "point") {
+    const p = state.points[index];
+    return p ? { lat: p.lat, lon: p.lon, name: p.name } : null;
   }
+  if (kind === "shape") {
+    const sh = state.shapes[index];
+    if (!sh) return null;
+    const name = sh.name || sh.type;
+    if (sh.center) return { lat: sh.center.lat, lon: sh.center.lon, name };
+    if (sh.pts?.length) {
+      if ((sh.type === "measure" || sh.type === "bearing") && sh.pts.length >= 2) {
+        const a = sh.pts[0];
+        const b = sh.pts[1];
+        return { lat: (a.lat + b.lat) / 2, lon: (a.lon + b.lon) / 2, name };
+      }
+      const c = centroid(sh.pts);
+      return { lat: c.lat, lon: c.lon, name };
+    }
+    return null;
+  }
+  if (kind === "draw") {
+    const d = state.drawings[index];
+    if (!d) return null;
+    const name = d.name || "Çizim";
+    if (d.labelLat != null) return { lat: d.labelLat, lon: d.labelLon, name };
+    const stroke = d.strokes?.[0] || d.pts;
+    if (stroke?.length) {
+      const midPt = stroke[Math.floor(stroke.length / 2)];
+      return { lat: midPt.lat, lon: midPt.lon, name };
+    }
+  }
+  return null;
 }
 
-async function onParselIlChange() {
-  const ilId = $("#parselIl").value;
-  $("#parselMahalle").innerHTML = `<option value="">Önce ilçe seçin</option>`;
-  const sel = $("#parselIlce");
-  if (!ilId) {
-    sel.innerHTML = `<option value="">Önce il seçin</option>`;
+function openRouteTo(lat, lon, _name) {
+  window.open(
+    `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(lat + "," + lon)}`,
+    "_blank",
+    "noopener"
+  );
+}
+
+async function shareItem(kind, index) {
+  const anchor = getItemAnchor(kind, index);
+  const when = fmtDateTime();
+  let name = anchor?.name || "MKSI";
+  let payload;
+  if (kind === "point") {
+    const p = state.points[index];
+    if (!p) return toast("Nokta yok");
+    payload = { app: "MKSI", version: 1, exportedAt: new Date().toISOString(), points: [p] };
+    name = p.name;
+  } else if (kind === "shape") {
+    const s = state.shapes[index];
+    if (!s) return toast("Şekil yok");
+    payload = { app: "MKSI", version: 1, exportedAt: new Date().toISOString(), shapes: [s] };
+    name = s.name || s.type;
+  } else if (kind === "draw") {
+    const d = state.drawings[index];
+    if (!d) return toast("Çizim yok");
+    payload = { app: "MKSI", version: 1, exportedAt: new Date().toISOString(), drawings: [d] };
+    name = d.name || "Çizim";
+  } else {
     return;
   }
-  sel.innerHTML = `<option value="">Yükleniyor…</option>`;
-  try {
-    const list = await fetchIlceler(ilId);
-    sel.innerHTML =
-      `<option value="">İlçe seçin</option>` +
-      list.map((x) => `<option value="${x.id}">${escapeHtml(x.text)}</option>`).join("");
-  } catch (_) {
-    sel.innerHTML = `<option value="">İlçeler alınamadı</option>`;
+  const json = JSON.stringify(payload, null, 2);
+  let text = `MKSI — ${name}\n${when}\n`;
+  if (anchor) {
+    text += `MGRS: ${toMgrs(anchor.lat, anchor.lon)}\n`;
+    text += `Lat: ${anchor.lat.toFixed(6)}\nLon: ${anchor.lon.toFixed(6)}\n`;
+    text += `Harita: https://www.google.com/maps?q=${anchor.lat},${anchor.lon}\n`;
   }
-}
-
-async function onParselIlceChange() {
-  const ilceId = $("#parselIlce").value;
-  const sel = $("#parselMahalle");
-  if (!ilceId) {
-    sel.innerHTML = `<option value="">Önce ilçe seçin</option>`;
-    return;
-  }
-  sel.innerHTML = `<option value="">Yükleniyor…</option>`;
-  try {
-    const list = await fetchMahalleler(ilceId);
-    sel.innerHTML =
-      `<option value="">Mahalle seçin</option>` +
-      list.map((x) => `<option value="${x.id}">${escapeHtml(x.text)}</option>`).join("");
-  } catch (_) {
-    sel.innerHTML = `<option value="">Mahalleler alınamadı</option>`;
-  }
-}
-
-async function queryParselAt(lat, lon) {
-  if (!navigator.onLine) return toast("Parsel için internet gerekli");
-  toast("Parsel sorgulanıyor…");
-  try {
-    const feat = await fetchParselByCoord(lat, lon);
-    if (!feat?.geometry) {
-      $("#parselResult").innerHTML = "Bu noktada parsel bulunamadı.";
-      openSheet("#sheetParsel");
-      return toast("Parsel yok");
-    }
-    showParselFeature(feat);
-  } catch (e) {
-    toast("Sorgu hatası: " + (e.message || e));
-    openSheet("#sheetParsel");
-  }
-}
-
-async function queryParselByAdaForm() {
-  const mahalleId = $("#parselMahalle").value;
-  const ada = $("#parselAda").value.trim();
-  const no = $("#parselNo").value.trim();
-  if (!mahalleId || !ada || !no) return toast("Mahalle, ada ve parsel gerekli");
-  if (!navigator.onLine) return toast("Parsel için internet gerekli");
-  toast("Parsel sorgulanıyor…");
-  try {
-    const feat = await fetchParselByAda(mahalleId, ada, no);
-    if (!feat?.geometry) {
-      $("#parselResult").innerHTML = "Parsel bulunamadı.";
-      return toast("Parsel yok");
-    }
-    showParselFeature(feat);
-  } catch (e) {
-    toast("Sorgu hatası: " + (e.message || e));
-  }
-}
-
-function showParselFeature(feature) {
-  const props = feature.properties || {};
-  const info = summarizeParsel(props);
-  const pts = ringToLatLngs(feature.geometry.coordinates);
-  if (pts.length < 3) return toast("Geometri geçersiz");
-  const center = featureCenter(feature) || centroid(pts);
-  const name = $("#parselName").value.trim() || info.title;
-
-  clearTemp();
-  L.polygon(
-    pts.map((p) => [p.lat, p.lon]),
-    { color: "#c45c26", weight: 2, fillColor: "#c45c26", fillOpacity: 0.25 }
-  ).addTo(tempLayer);
-  L.circleMarker([center.lat, center.lon], {
-    radius: 5,
-    color: "#fff",
-    fillColor: "#c45c26",
-    fillOpacity: 1,
-  }).addTo(tempLayer);
-  addMapLabel(
-    tempLayer,
-    center.lat,
-    center.lon,
-    `<span class="name">${escapeHtml(name)}</span><span class="hl">${escapeHtml(info.title)}</span><br/>${escapeHtml(String(info.alan))} m²`,
-    true
+  text += `\n---MKSI-JSON---\n\`\`\`json\n${json}\n\`\`\``;
+  const r = await shareOrDownload(
+    `mksi-${name.replace(/\s+/g, "_")}-${dateStamp()}.json`,
+    text,
+    `MKSI — ${name}`
   );
-
-  map.fitBounds(
-    L.latLngBounds(pts.map((p) => [p.lat, p.lon])),
-    { padding: [40, 40], maxZoom: 18 }
-  );
-
-  pendingShape = {
-    type: "parsel",
-    name,
-    pts,
-    center,
-    ozet: info.title,
-    ada: info.ada,
-    parsel: info.parsel,
-    alan: info.alan,
-    nitelik: info.nitelik,
-    mahalle: info.mahalle,
-    il: info.il,
-    ilce: info.ilce,
-    summary: `${info.title} · ${info.alan} m²`,
-  };
-
-  $("#parselResult").innerHTML = info.html + `<br/><span style="color:#8a9bb0">Kaynak: TKGM MEGSIS</span>`;
-  showResult("Parsel", info.html, name);
-  toast(info.title);
+  if (r === "copied") toast("Paylaşım metni panoya kopyalandı");
+  else if (r === "shared" || r === "shared-file") toast("Paylaşım açıldı");
+  else if (r === "download") toast("Dosya indirildi");
+  else if (r !== "abort") toast("Paylaşılamadı");
 }
 
 function defaultLabel(sh) {
@@ -1659,33 +1589,6 @@ function bindUi() {
     $("#arcResult").innerHTML = "";
   });
 
-  $("#parselMode").addEventListener("change", syncParselModeUi);
-  $("#parselIl").addEventListener("change", onParselIlChange);
-  $("#parselIlce").addEventListener("change", onParselIlceChange);
-  $("#btnParselOfficial").addEventListener("click", () => {
-    window.open(TKGM_SITE, "_blank", "noopener");
-  });
-  $("#btnParselClear").addEventListener("click", () => {
-    clearTemp();
-    $("#parselResult").innerHTML = "";
-  });
-  $("#btnParselGo").addEventListener("click", () => {
-    const mode = $("#parselMode").value;
-    if (mode === "gps") {
-      if (!lastGps) return toast("Konum yok");
-      closeSheets();
-      queryParselAt(lastGps.lat, lastGps.lon);
-    } else if (mode === "ada") {
-      queryParselByAdaForm();
-    } else {
-      pickMode = "parsel";
-      closeSheets();
-      setModeBanner("Parsel için haritaya dokun");
-      activeTool = "parsel";
-      highlightTool("parsel");
-    }
-  });
-
   $("#btnSavePtGo").addEventListener("click", () => {
     const src = $("#savePtSrc").value;
     const name = $("#savePtName").value.trim() || "Nokta";
@@ -1763,31 +1666,48 @@ function bindUi() {
 
   $("#btnExportAll").addEventListener("click", async () => {
     const r = await shareOrDownload(`mksi-${dateStamp()}.json`, exportJson(state, "all"));
-    if (r !== "abort") toast(r.startsWith("shared") ? "Paylaşım açıldı" : "Dosya indirildi");
+    if (r === "copied") toast("Panoya kopyalandı — WhatsApp'a yapıştırabilirsiniz");
+    else if (r.startsWith("shared")) toast("Paylaşım açıldı");
+    else if (r === "download") toast("Dosya indirildi");
   });
   $("#btnExportPts").addEventListener("click", async () => {
     const r = await shareOrDownload(
       `mksi-noktalar-${dateStamp()}.json`,
       exportJson(state, "points")
     );
-    if (r !== "abort") toast(r.startsWith("shared") ? "Paylaşım açıldı" : "Dosya indirildi");
+    if (r === "copied") toast("Panoya kopyalandı — WhatsApp'a yapıştırabilirsiniz");
+    else if (r.startsWith("shared")) toast("Paylaşım açıldı");
+    else if (r === "download") toast("Dosya indirildi");
   });
+  async function applyImportText(text) {
+    const data = parseImport(text);
+    if (data.points.length) state.points = mergeById(state.points, data.points);
+    if (data.shapes.length) state.shapes = state.shapes.concat(data.shapes);
+    if (data.drawings.length) state.drawings = state.drawings.concat(data.drawings);
+    await persist();
+    renderSaved();
+    toast("İçe aktarıldı");
+  }
+
   $("#btnImport").addEventListener("click", () => $("#importFile").click());
   $("#importFile").addEventListener("change", async (ev) => {
     const file = ev.target.files?.[0];
     if (!file) return;
     try {
-      const data = parseImport(await file.text());
-      if (data.points.length) state.points = mergeById(state.points, data.points);
-      if (data.shapes.length) state.shapes = state.shapes.concat(data.shapes);
-      if (data.drawings.length) state.drawings = state.drawings.concat(data.drawings);
-      await persist();
-      renderSaved();
-      toast("İçe aktarıldı");
+      await applyImportText(await file.text());
     } catch (e) {
       toast("Aktarım hatası: " + e.message);
     }
     ev.target.value = "";
+  });
+  $("#btnImportPaste").addEventListener("click", async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text?.trim()) return toast("Pano boş");
+      await applyImportText(text);
+    } catch (_) {
+      toast("Panodan okunamadı — metni kopyalayıp tekrar deneyin");
+    }
   });
 
   $("#btnClearAll").addEventListener("click", async () => {
@@ -1803,11 +1723,23 @@ function bindUi() {
 
   $("#pointsList").addEventListener("click", (e) => {
     const del = e.target.closest("[data-del-pt]");
+    const route = e.target.closest("[data-route-kind]");
+    const share = e.target.closest("[data-share-kind]");
     const go = e.target.closest("[data-go-kind]");
     if (del) {
       state.points = state.points.filter((x) => x.id !== del.dataset.delPt);
       persist();
       renderSaved();
+      return;
+    }
+    if (route) {
+      const anchor = getItemAnchor(route.dataset.routeKind, Number(route.dataset.routeI));
+      if (!anchor) return toast("Konum yok");
+      openRouteTo(anchor.lat, anchor.lon, anchor.name);
+      return;
+    }
+    if (share) {
+      shareItem(share.dataset.shareKind, Number(share.dataset.shareI));
       return;
     }
     if (go) {
@@ -1817,6 +1749,8 @@ function bindUi() {
 
   $("#shapesList").addEventListener("click", (e) => {
     const del = e.target.closest("[data-del-kind]");
+    const route = e.target.closest("[data-route-kind]");
+    const share = e.target.closest("[data-share-kind]");
     const go = e.target.closest("[data-go-kind]");
     const edit = e.target.closest("[data-edit-shape]");
     if (del) {
@@ -1829,6 +1763,16 @@ function bindUi() {
     }
     if (edit) {
       openEditShape(Number(edit.dataset.editShape));
+      return;
+    }
+    if (route) {
+      const anchor = getItemAnchor(route.dataset.routeKind, Number(route.dataset.routeI));
+      if (!anchor) return toast("Konum yok");
+      openRouteTo(anchor.lat, anchor.lon, anchor.name);
+      return;
+    }
+    if (share) {
+      shareItem(share.dataset.shareKind, Number(share.dataset.shareI));
       return;
     }
     if (go) {
@@ -1851,9 +1795,8 @@ function bindUi() {
   $("#infoMgrs").addEventListener("click", () => {
     copyText($("#infoMgrs").textContent);
   });
-  $("#infoLl")?.addEventListener("click", () => {
-    copyText($("#infoLl").textContent);
-  });
+  $("#infoLat").addEventListener("click", () => copyText($("#infoLat").textContent));
+  $("#infoLon").addEventListener("click", () => copyText($("#infoLon").textContent));
 
   window.addEventListener("online", setNetDot);
   window.addEventListener("offline", setNetDot);
