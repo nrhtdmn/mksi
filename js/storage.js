@@ -123,49 +123,30 @@ export function parseImport(text) {
   };
 }
 
-/** Mobil uyumlu paylaşım: önce metin paylaş, sonra panoya kopyala, sonra indir */
+/** Dosya olarak dışa aktar / paylaş — metin veya pano yok */
 export async function shareOrDownload(filename, text, title = "MKSI") {
   const body = String(text);
+  const safeName = String(filename || "mksi.json").replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_");
 
-  // 1) Web Share — metin (WhatsApp / Bip / vs. mobil)
-  if (navigator.share) {
-    try {
-      await navigator.share({ title, text: body });
-      return "shared";
-    } catch (e) {
-      if (e.name === "AbortError") return "abort";
-    }
-  }
-
-  // 2) Dosya paylaşımı (destekleyen cihazlar)
+  // 1) Dosya paylaşımı (WhatsApp / Bip vb. destekleyen cihazlar)
   try {
-    const blob = new Blob([body], { type: "text/plain;charset=utf-8" });
-    const file = new File([blob], filename.replace(/\.json$/i, ".txt"), {
-      type: "text/plain",
-    });
+    const blob = new Blob([body], { type: "application/json;charset=utf-8" });
+    const file = new File([blob], safeName, { type: "application/json" });
     if (navigator.share && navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ files: [file], title, text: title });
+      await navigator.share({ files: [file], title });
       return "shared-file";
     }
   } catch (e) {
     if (e.name === "AbortError") return "abort";
   }
 
-  // 3) Panoya kopyala
+  // 2) Dosya indir
   try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(body);
-      return "copied";
-    }
-  } catch (_) {}
-
-  // 4) İndir
-  try {
-    const blob = new Blob([body], { type: "application/json" });
+    const blob = new Blob([body], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = filename;
+    a.download = safeName;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -174,4 +155,15 @@ export async function shareOrDownload(filename, text, title = "MKSI") {
   } catch (_) {}
 
   return "fail";
+}
+
+/** Dosya adı: şekil/çizim adı + tarih saat */
+export function exportFileName(itemName, stamp) {
+  const base = String(itemName || "MKSI")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "")
+    .replace(/[. ]+$/g, "")
+    .slice(0, 80) || "MKSI";
+  return `${base}-${stamp}.json`;
 }

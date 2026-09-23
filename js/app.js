@@ -14,6 +14,7 @@ import {
   exportJson,
   parseImport,
   shareOrDownload,
+  exportFileName,
 } from "./storage.js";
 import { getSlopeNear, getWeather } from "./weather.js";
 
@@ -1454,20 +1455,18 @@ function openRouteTo(lat, lon, _name) {
 }
 
 async function shareItem(kind, index) {
-  const anchor = getItemAnchor(kind, index);
-  const when = fmtDateTime();
-  let name = anchor?.name || "MKSI";
+  let name = "MKSI";
   let payload;
   if (kind === "point") {
     const p = state.points[index];
     if (!p) return toast("Nokta yok");
     payload = { app: "MKSI", version: 1, exportedAt: new Date().toISOString(), points: [p] };
-    name = p.name;
+    name = p.name || "Nokta";
   } else if (kind === "shape") {
     const s = state.shapes[index];
     if (!s) return toast("Şekil yok");
     payload = { app: "MKSI", version: 1, exportedAt: new Date().toISOString(), shapes: [s] };
-    name = s.name || s.type;
+    name = s.name || s.type || "Şekil";
   } else if (kind === "draw") {
     const d = state.drawings[index];
     if (!d) return toast("Çizim yok");
@@ -1476,23 +1475,22 @@ async function shareItem(kind, index) {
   } else {
     return;
   }
-  const json = JSON.stringify(payload, null, 2);
-  let text = `MKSI — ${name}\n${when}\n`;
-  if (anchor) {
-    text += `MGRS: ${toMgrs(anchor.lat, anchor.lon)}\n`;
-    text += `Lat: ${anchor.lat.toFixed(6)}\nLon: ${anchor.lon.toFixed(6)}\n`;
-    text += `Harita: https://www.google.com/maps?q=${anchor.lat},${anchor.lon}\n`;
-  }
-  text += `\n---MKSI-JSON---\n\`\`\`json\n${json}\n\`\`\``;
-  const r = await shareOrDownload(
-    `mksi-${name.replace(/\s+/g, "_")}-${dateStamp()}.json`,
-    text,
-    `MKSI — ${name}`
-  );
-  if (r === "copied") toast("Paylaşım metni panoya kopyalandı");
-  else if (r === "shared" || r === "shared-file") toast("Paylaşım açıldı");
-  else if (r === "download") toast("Dosya indirildi");
-  else if (r !== "abort") toast("Paylaşılamadı");
+  const stamp = dateStamp();
+  const filename = exportFileName(name, stamp);
+  const r = await shareOrDownload(filename, JSON.stringify(payload, null, 2), name);
+  if (r === "shared-file") toast(`Dosya paylaşıldı: ${filename}`);
+  else if (r === "download") toast(`Dosya indirildi: ${filename}`);
+  else if (r !== "abort") toast("Dosya dışa aktarılamadı");
+}
+
+function dateStamp() {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}.${mm}.${yyyy}_${hh}-${mi}`;
 }
 
 function defaultLabel(sh) {
@@ -1510,11 +1508,6 @@ function mergeById(a, b) {
   const m = new Map(a.map((x) => [x.id, x]));
   for (const x of b) m.set(x.id || uid(), x);
   return [...m.values()];
-}
-
-function dateStamp() {
-  const d = new Date();
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 function bindUi() {
@@ -1735,19 +1728,20 @@ function bindUi() {
   $("#btnDrawSave").addEventListener("click", saveDrawStrokes);
 
   $("#btnExportAll").addEventListener("click", async () => {
-    const r = await shareOrDownload(`mksi-${dateStamp()}.json`, exportJson(state, "all"));
-    if (r === "copied") toast("Panoya kopyalandı — WhatsApp'a yapıştırabilirsiniz");
-    else if (r.startsWith("shared")) toast("Paylaşım açıldı");
-    else if (r === "download") toast("Dosya indirildi");
+    const stamp = dateStamp();
+    const filename = exportFileName("MKSI", stamp);
+    const r = await shareOrDownload(filename, exportJson(state, "all"), "MKSI");
+    if (r === "shared-file") toast(`Dosya paylaşıldı: ${filename}`);
+    else if (r === "download") toast(`Dosya indirildi: ${filename}`);
+    else if (r !== "abort") toast("Dosya dışa aktarılamadı");
   });
   $("#btnExportPts").addEventListener("click", async () => {
-    const r = await shareOrDownload(
-      `mksi-noktalar-${dateStamp()}.json`,
-      exportJson(state, "points")
-    );
-    if (r === "copied") toast("Panoya kopyalandı — WhatsApp'a yapıştırabilirsiniz");
-    else if (r.startsWith("shared")) toast("Paylaşım açıldı");
-    else if (r === "download") toast("Dosya indirildi");
+    const stamp = dateStamp();
+    const filename = exportFileName("Noktalar", stamp);
+    const r = await shareOrDownload(filename, exportJson(state, "points"), "Noktalar");
+    if (r === "shared-file") toast(`Dosya paylaşıldı: ${filename}`);
+    else if (r === "download") toast(`Dosya indirildi: ${filename}`);
+    else if (r !== "abort") toast("Dosya dışa aktarılamadı");
   });
   async function applyImportText(text) {
     const data = parseImport(text);
