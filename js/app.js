@@ -7,8 +7,6 @@ import {
   fmtArea,
   circleArea,
   polygonArea,
-  normMil,
-  fmtCoord,
 } from "./geo.js";
 import {
   loadState,
@@ -29,20 +27,23 @@ let state = {
   settings: { layer: "hybrid", lastLat: 39.92, lastLon: 32.85, lastZoom: 12 },
 };
 
-let map, layers = {};
+let map;
+let layers = {};
 let gpsMarker = null;
 let gpsAccuracy = null;
-let lastGps = null; // {lat, lon, acc, alt, sats?}
-let watchId = null;
+let lastGps = null;
 let activeTool = null;
-let pickMode = null; // 'circle' | 'arc' | 'savept' | 'measure1' ...
-let tempLayer = L.layerGroup();
-let savedLayer = L.layerGroup();
+let pickMode = null; // circle | arc | savept | measure1 | measure2
+let measureKind = "measure";
+let tempLayer;
+let savedLayer;
 let measurePts = [];
 let areaPts = [];
 let drawLine = null;
 let drawing = false;
+let drawStrokes = [];
 let pendingShape = null;
+let nameCallback = null;
 
 function toast(msg, ms = 2200) {
   const el = $("#toast");
@@ -56,7 +57,27 @@ function toMgrs(lat, lon) {
   try {
     if (typeof mgrs !== "undefined") return mgrs.forward([lon, lat], 5);
   } catch (_) {}
-  return fmtCoord(lat, lon);
+  return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+}
+
+function fromMgrs(str) {
+  const s = String(str || "").trim();
+  if (!s) throw new Error("MGRS boş");
+  const compact = s.replace(/\s/g, "");
+  const [lon, lat] = mgrs.toPoint(compact);
+  return { lat, lon };
+}
+
+function uid() {
+  return crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function setNetDot() {
@@ -88,68 +109,104 @@ function setModeBanner(text) {
 }
 
 function resetMapInteractions() {
+  if (!map) return;
   map.dragging.enable();
   map.doubleClickZoom.enable();
   map.getContainer().classList.remove("draw-mode");
 }
 
-function setTool(name) {
-  cancelPick();
-  resetMapInteractions();
-  activeTool = name;
-  $$("#toolbar .btn").forEach((b) => b.classList.toggle("active", b.dataset.tool === name));
-  map.getContainer().classList.toggle(
-    "draw-mode",
-    name === "draw" || name === "measure" || name === "bearing" || name === "area"
-  );
+function clearToolHighlight() {
+  $$("#toolbar .btn").forEach((b) => b.classList.remove("active"));
+}
 
-  if (name === "circle") openSheet("#sheetCircle");
-  else if (name === "arc") openSheet("#sheetArc");
-  else if (name === "savept") openSheet("#sheetSavePt");
-  else if (name === "measure") {
-    measurePts = [];
-    clearTemp();
-    setModeBanner("1. noktaya dokun");
-  } else if (name === "bearing") {
-    measurePts = [];
-    clearTemp();
-    setModeBanner("Başlangıç noktasına dokun");
+function highlightTool(name) {
+  $$("#toolbar .btn").forEach((b) => b.classList.toggle("active", b.dataset.tool === name));
+}
+
+function fillPointSelects() {
+  const opts =
+    state.points.length === 0
+      ? `<option value="">— kayıtlı nokta yok —</option>`
+      : state.points
+          .map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`)
+          .join("");
+  ["#measureFrom", "#measureTo", "#circleSavedPt", "#arcSavedPt"].forEach((sel) => {
+    const el = $(sel);
+    if (el) el.innerHTML = opts;
+  });
+}
+
+function getPointById(id) {
+  return state.points.find((p) => p.id === id) || null;
+}
+
+function exitDrawMode(clearStrokes = true) {
+  if (clearStrokes) drawStrokes = [];
+  $("#drawBar").hidden = true;
+  resetMapInteractions();
+}
+
+function setTool(name) {
+  const leavingDraw = activeTool === "draw" && name !== "draw";
+  if (leavingDraw) exitDrawMode(true);
+
+  cancelPick();
+  if (name !== "area" && name !== "finishArea") {
+    areaPts = [];
+  }
+  if (name !== "draw") resetMapInteractions();
+
+  activeTool = name;
+  highlightTool(name);
+
+  if (name === "measure" || name === "bearing") {
+    measureKind = name;
+    $("#measureSheetTitle").textContent = name === "measure" ? "Mesafe" : "İstikamet";
+    fillPointSelects();
+    $("#measureMode").value = "map";
+    $("#measureSavedFields").classList.add("hidden");
+    $("#measureName").value = "";
+    openSheet("#sheetMeasure");
+  } else if (name === "circle") {
+    fillPointSelects();
+    syncCircleCenterUi();
+    openSheet("#sheetCircle");
+  } else if (name === "arc") {
+    fillPointSelects();
+    syncArcCenterUi();
+    openSheet("#sheetArc");
+  } else if (name === "savept") {
+    syncSavePtUi();
+    openSheet("#sheetSavePt");
   } else if (name === "area") {
     areaPts = [];
     clearTemp();
     map.doubleClickZoom.disable();
-    setModeBanner("Köşeleri işaretle — bitince «Alan✓»");
+    setModeBanner("Köşeleri işaretle — Bitir ile tamamla");
     toast("Alan: köşeleri işaretleyin");
+  } else if (name === "finishArea") {
+    finishArea();
   } else if (name === "draw") {
     map.dragging.disable();
-    setModeBanner("Kalem: parmağınızla çizin");
-  } else if (name === "finishArea") {
-    if (areaPts.length < 3) {
-      toast("En az 3 köşe gerekli");
-      activeTool = "area";
-      map.doubleClickZoom.disable();
-      $$("#toolbar .btn").forEach((b) => b.classList.toggle("active", b.dataset.tool === "area"));
-      setModeBanner("Köşeleri işaretle — bitince «Alan✓»");
-      return;
-    }
-    finishArea();
-    activeTool = null;
-    $$("#toolbar .btn").forEach((b) => b.classList.remove("active"));
+    map.getContainer().classList.add("draw-mode");
+    $("#drawBar").hidden = false;
+    setModeBanner("Kalem: çizin — bitince Kaydet");
+    toast("Kalemi kaldırınca devam eder; Kaydet ile kaydedilir");
   } else if (name === "weather") {
-    refreshWeatherAtFocus();
+    refreshWeather();
     activeTool = null;
-    $$("#toolbar .btn").forEach((b) => b.classList.remove("active"));
+    clearToolHighlight();
+    setModeBanner("");
   } else {
     setModeBanner("");
+    $("#drawBar").hidden = true;
   }
 }
 
 function cancelPick() {
   pickMode = null;
   drawing = false;
-  if (drawLine) {
-    /* keep unfinished? discard */
-  }
+  measurePts = [];
 }
 
 function clearTemp() {
@@ -158,35 +215,123 @@ function clearTemp() {
 }
 
 function persist() {
-  state.settings.lastLat = map.getCenter().lat;
-  state.settings.lastLon = map.getCenter().lng;
-  state.settings.lastZoom = map.getZoom();
+  if (map) {
+    const c = map.getCenter();
+    state.settings.lastLat = c.lat;
+    state.settings.lastLon = c.lng;
+    state.settings.lastZoom = map.getZoom();
+  }
   return saveState(state);
+}
+
+function askName(defaultName, cb) {
+  nameCallback = cb;
+  $("#nameInput").value = defaultName || "";
+  openSheet("#sheetName");
+  setTimeout(() => $("#nameInput").focus(), 200);
+}
+
+function addMapLabel(layer, lat, lon, html, multi = false) {
+  const icon = L.divIcon({
+    className: "map-label-icon",
+    html: `<div class="map-label${multi ? " multi" : ""}">${html}</div>`,
+    iconSize: [0, 0],
+    iconAnchor: [0, 0],
+  });
+  return L.marker([lat, lon], { icon, interactive: false, keyboard: false }).addTo(layer);
+}
+
+function mid(a, b) {
+  return { lat: (a.lat + b.lat) / 2, lon: (a.lon + b.lon) / 2 };
+}
+
+function centroid(pts) {
+  let lat = 0;
+  let lon = 0;
+  for (const p of pts) {
+    lat += p.lat;
+    lon += p.lon;
+  }
+  return { lat: lat / pts.length, lon: lon / pts.length };
+}
+
+function labelLine(layer, a, b, dist, mil, name) {
+  const m = mid(a, b);
+  const nameHtml = name ? `<span class="name">${escapeHtml(name)}</span>` : "";
+  addMapLabel(
+    layer,
+    m.lat,
+    m.lon,
+    `${nameHtml}<span class="hl">${fmtDist(dist)}</span><br/>${mil} milyem`,
+    true
+  );
+}
+
+function labelCircleShape(layer, lat, lon, radius, name) {
+  const edge = destination(lat, lon, 1600, radius);
+  const nameHtml = name ? `<span class="name">${escapeHtml(name)}</span>` : "";
+  addMapLabel(
+    layer,
+    edge.lat,
+    edge.lon,
+    `${nameHtml}r <span class="hl">${fmtDist(radius)}</span>`,
+    !!name
+  );
+  addMapLabel(layer, lat, lon, `<span class="hl">${fmtArea(circleArea(radius))}</span>`);
+}
+
+function labelArcShape(layer, lat, lon, mainMil, dist, left, right, startMil, endMil, name) {
+  const midPt = destination(lat, lon, mainMil, dist);
+  const leftPt = destination(lat, lon, startMil, dist);
+  const rightPt = destination(lat, lon, endMil, dist);
+  const midRay = mid({ lat, lon }, midPt);
+  const nameHtml = name ? `<span class="name">${escapeHtml(name)}</span>` : "";
+  addMapLabel(
+    layer,
+    midRay.lat,
+    midRay.lon,
+    `${nameHtml}<span class="hl">${mainMil}</span> milyem<br/>${fmtDist(dist)}`,
+    true
+  );
+  addMapLabel(layer, leftPt.lat, leftPt.lon, `Sol <span class="hl">${left}</span>`);
+  addMapLabel(layer, rightPt.lat, rightPt.lon, `Sağ <span class="hl">${right}</span>`);
+}
+
+function labelAreaShape(layer, pts, area, name) {
+  const c = centroid(pts);
+  const nameHtml = name ? `<span class="name">${escapeHtml(name)}</span>` : "";
+  addMapLabel(layer, c.lat, c.lon, `${nameHtml}<span class="hl">${fmtArea(area)}</span>`, !!name);
+}
+
+function showResult(title, html, suggestedName) {
+  $("#resultTitle").textContent = title;
+  $("#resultBody").innerHTML = html;
+  $("#resultName").value = suggestedName || "";
+  openSheet("#sheetResult");
 }
 
 function initMap() {
   const s = state.settings;
-  map = L.map("map", {
-    zoomControl: true,
-    attributionControl: true,
-    maxZoom: 19,
-  }).setView([s.lastLat, s.lastLon], s.lastZoom);
+  tempLayer = L.layerGroup();
+  savedLayer = L.layerGroup();
+
+  map = L.map("map", { zoomControl: true, maxZoom: 19 }).setView(
+    [s.lastLat ?? 39.92, s.lastLon ?? 32.85],
+    s.lastZoom ?? 12
+  );
 
   layers.street = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: "© OpenStreetMap",
   });
-
   layers.sat = L.tileLayer(
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     { maxZoom: 19, attribution: "© Esri" }
   );
-
   layers.labels = L.tileLayer(
     "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-    { maxZoom: 19, opacity: 0.85, attribution: "" }
+    { maxZoom: 19, opacity: 0.85 }
   );
-
   layers.hybrid = L.layerGroup([layers.sat, layers.labels]);
 
   setBaseLayer(s.layer || "hybrid");
@@ -195,12 +340,16 @@ function initMap() {
 
   map.on("moveend", () => {
     const c = map.getCenter();
-    updateInfoFor(c.lat, c.lng, { fromMap: true });
+    updateInfo(c.lat, c.lng, { fromMap: true });
     persist();
   });
-
   map.on("click", onMapClick);
-  map.on("dblclick", onMapDblClick);
+  map.on("dblclick", (e) => {
+    if (activeTool === "area" && areaPts.length >= 3) {
+      L.DomEvent.stop(e);
+      finishArea();
+    }
+  });
 
   const container = map.getContainer();
   container.addEventListener("pointerdown", onDrawStart, { passive: false });
@@ -212,20 +361,24 @@ function initMap() {
 }
 
 function setBaseLayer(name) {
-  Object.values(layers).forEach((l) => {
-    if (map.hasLayer(l) && (l === layers.street || l === layers.hybrid)) map.removeLayer(l);
-  });
-  if (name === "street") layers.street.addTo(map);
-  else {
+  if (map.hasLayer(layers.street)) map.removeLayer(layers.street);
+  if (map.hasLayer(layers.hybrid)) map.removeLayer(layers.hybrid);
+  if (name === "street") {
+    layers.street.addTo(map);
+  } else {
     layers.hybrid.addTo(map);
     name = "hybrid";
   }
   state.settings.layer = name;
-  $$("#layerToggle button").forEach((b) => b.classList.toggle("active", b.dataset.layer === name));
+  $$("#layerToggle button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.layer === name)
+  );
   persist();
 }
 
 function onMapClick(e) {
+  if (activeTool === "draw") return;
+
   const { lat, lng: lon } = e.latlng;
 
   if (pickMode === "circle") {
@@ -241,53 +394,34 @@ function onMapClick(e) {
     return;
   }
   if (pickMode === "savept") {
-    savePointAt(lat, lon, $("#savePtName").value.trim() || "Nokta");
+    const name = $("#savePtName").value.trim() || "Nokta";
+    savePointAt(lat, lon, name);
     pickMode = null;
     setModeBanner("");
     closeSheets();
     return;
   }
-
-  if (activeTool === "measure" || activeTool === "bearing") {
-    measurePts.push({ lat, lon });
-    L.circleMarker([lat, lon], { radius: 6, color: "#e8b84a", fillColor: "#e8b84a", fillOpacity: 1 }).addTo(tempLayer);
-    if (measurePts.length === 1) {
-      setModeBanner("2. noktaya dokun");
-    } else if (measurePts.length >= 2) {
-      const a = measurePts[0];
-      const b = measurePts[1];
-      const dist = distanceM(a.lat, a.lon, b.lat, b.lon);
-      const mil = bearingMil(a.lat, a.lon, b.lat, b.lon);
-      L.polyline(
-        [
-          [a.lat, a.lon],
-          [b.lat, b.lon],
-        ],
-        { color: "#3d9a6a", weight: 3 }
-      ).addTo(tempLayer);
-      labelMeasureLine(tempLayer, a, b, dist, mil);
-      const html =
-        activeTool === "measure"
-          ? `<strong>Mesafe:</strong> ${fmtDist(dist)}<br/><strong>İstikamet:</strong> ${mil} milyem<br/><strong>A→B:</strong> ${toMgrs(a.lat, a.lon)} → ${toMgrs(b.lat, b.lon)}`
-          : `<strong>İstikamet açısı:</strong> ${mil} milyem<br/><strong>Mesafe:</strong> ${fmtDist(dist)}<br/><strong>Başlangıç:</strong> ${toMgrs(a.lat, a.lon)}<br/><strong>Bitiş:</strong> ${toMgrs(b.lat, b.lon)}`;
-      pendingShape = {
-        type: activeTool,
-        pts: [a, b],
-        dist,
-        mil,
-      };
-      showResult(activeTool === "measure" ? "Mesafe" : "İstikamet", html);
-      measurePts = [];
-      setModeBanner("");
-      activeTool = null;
-      $$("#toolbar .btn").forEach((b) => b.classList.remove("active"));
-    }
+  if (pickMode === "measure1") {
+    measurePts = [{ lat, lon }];
+    L.circleMarker([lat, lon], { radius: 6, color: "#e8b84a", fillOpacity: 1 }).addTo(tempLayer);
+    pickMode = "measure2";
+    setModeBanner("2. noktaya dokun");
+    return;
+  }
+  if (pickMode === "measure2") {
+    const a = measurePts[0];
+    pickMode = null;
+    finishMeasureLine(a, { lat, lon });
     return;
   }
 
   if (activeTool === "area") {
     areaPts.push({ lat, lon });
-    L.circleMarker([lat, lon], { radius: 5, color: "#4a9fd4", fillOpacity: 1 }).addTo(tempLayer);
+    L.circleMarker([lat, lon], {
+      radius: 5,
+      color: "#4a9fd4",
+      fillOpacity: 1,
+    }).addTo(tempLayer);
     if (areaPts.length >= 2) {
       tempLayer.eachLayer((l) => {
         if (l instanceof L.Polyline && !(l instanceof L.Polygon)) tempLayer.removeLayer(l);
@@ -297,47 +431,80 @@ function onMapClick(e) {
         { color: "#4a9fd4", weight: 2, dashArray: "4 4" }
       ).addTo(tempLayer);
     }
-    setModeBanner(`${areaPts.length} köşe — bitirmek için çift dokun`);
+    setModeBanner(`${areaPts.length} köşe — Bitir ile tamamla`);
     return;
   }
 
-  updateInfoFor(lat, lon, { forceWeather: false });
+  updateInfo(lat, lon, { fromMap: true });
 }
 
-function onMapDblClick(e) {
-  if (activeTool !== "area" || areaPts.length < 3) return;
-  L.DomEvent.stop(e);
-  finishArea();
+function finishMeasureLine(a, b) {
+  clearTemp();
+  const dist = distanceM(a.lat, a.lon, b.lat, b.lon);
+  const mil = bearingMil(a.lat, a.lon, b.lat, b.lon);
+  const name = $("#measureName").value.trim();
+  L.circleMarker([a.lat, a.lon], { radius: 6, color: "#e8b84a", fillOpacity: 1 }).addTo(tempLayer);
+  L.circleMarker([b.lat, b.lon], { radius: 6, color: "#e8b84a", fillOpacity: 1 }).addTo(tempLayer);
+  L.polyline(
+    [
+      [a.lat, a.lon],
+      [b.lat, b.lon],
+    ],
+    { color: "#3d9a6a", weight: 3 }
+  ).addTo(tempLayer);
+  labelLine(tempLayer, a, b, dist, mil, name);
+  pendingShape = { type: measureKind, pts: [a, b], dist, mil, name };
+  const html =
+    measureKind === "measure"
+      ? `<strong>Mesafe:</strong> ${fmtDist(dist)}<br/><strong>İstikamet:</strong> ${mil} milyem<br/><strong>A→B:</strong> ${toMgrs(a.lat, a.lon)} → ${toMgrs(b.lat, b.lon)}`
+      : `<strong>İstikamet:</strong> ${mil} milyem<br/><strong>Mesafe:</strong> ${fmtDist(dist)}<br/><strong>Başlangıç:</strong> ${toMgrs(a.lat, a.lon)}<br/><strong>Bitiş:</strong> ${toMgrs(b.lat, b.lon)}`;
+  showResult(measureKind === "measure" ? "Mesafe" : "İstikamet", html, name);
+  setModeBanner("");
+  activeTool = null;
+  clearToolHighlight();
+  measurePts = [];
 }
 
 function finishArea() {
+  if (areaPts.length === 0) {
+    toast("Önce Alan seçin");
+    activeTool = null;
+    clearToolHighlight();
+    return;
+  }
   if (areaPts.length < 3) {
     toast("En az 3 köşe gerekli");
+    activeTool = "area";
+    map.doubleClickZoom.disable();
+    highlightTool("area");
     return;
   }
   const area = polygonArea(areaPts);
+  clearTemp();
   L.polygon(
     areaPts.map((p) => [p.lat, p.lon]),
     { color: "#4a9fd4", weight: 2, fillOpacity: 0.2 }
   ).addTo(tempLayer);
-  labelArea(tempLayer, areaPts, area);
+  labelAreaShape(tempLayer, areaPts, area, "");
   pendingShape = { type: "area", pts: [...areaPts], area };
-  showResult("Alan", `<strong>Alan:</strong> ${fmtArea(area)}<br/><strong>Köşe:</strong> ${areaPts.length}`);
+  showResult("Alan", `<strong>Alan:</strong> ${fmtArea(area)}<br/><strong>Köşe:</strong> ${areaPts.length}`, "");
   areaPts = [];
   setModeBanner("");
   activeTool = null;
-  $$("#toolbar .btn").forEach((b) => b.classList.remove("active"));
+  resetMapInteractions();
+  clearToolHighlight();
 }
 
-/* Freehand draw */
+/* —— Pen: multi-stroke; lift finger does NOT open save dialog —— */
 function eventToLatLng(e) {
-  if (!map) return null;
-  return map.mouseEventToLatLng(e);
+  return map ? map.mouseEventToLatLng(e) : null;
 }
 
 function onDrawStart(e) {
   if (activeTool !== "draw") return;
-  if (e.target.closest?.(".leaflet-control")) return;
+  if (e.target.closest?.(".leaflet-control, .draw-bar, .toolbar, .topbar, button, .sheet, .sheet-backdrop")) {
+    return;
+  }
   e.preventDefault();
   const ll = eventToLatLng(e);
   if (!ll) return;
@@ -358,99 +525,80 @@ function onDrawEnd() {
   drawing = false;
   if (drawLine) {
     const latlngs = drawLine.getLatLngs();
-    pendingShape = {
+    if (latlngs.length >= 2) {
+      drawStrokes.push(latlngs.map((p) => ({ lat: p.lat, lon: p.lng })));
+    } else {
+      tempLayer.removeLayer(drawLine);
+    }
+    drawLine = null;
+    setModeBanner(
+      drawStrokes.length
+        ? `${drawStrokes.length} çizgi — Kaydet ile kaydedin`
+        : "Kalem: çizin — bitince Kaydet"
+    );
+  }
+}
+
+function undoDrawStroke() {
+  if (!drawStrokes.length) return toast("Geri alınacak çizgi yok");
+  drawStrokes.pop();
+  redrawDrawTemp();
+  setModeBanner(drawStrokes.length ? `${drawStrokes.length} çizgi` : "Kalem: çizin");
+}
+
+function clearDrawStrokes() {
+  drawStrokes = [];
+  tempLayer.clearLayers();
+  pendingShape = null;
+  setModeBanner("Kalem: çizin — bitince Kaydet");
+}
+
+function redrawDrawTemp() {
+  tempLayer.clearLayers();
+  pendingShape = null;
+  for (const stroke of drawStrokes) {
+    L.polyline(
+      stroke.map((p) => [p.lat, p.lon]),
+      { color: "#e8b84a", weight: 3 }
+    ).addTo(tempLayer);
+  }
+}
+
+function saveDrawStrokes() {
+  if (!drawStrokes.length) return toast("Çizim yok");
+  askName("Çizim", (name) => {
+    const strokes = drawStrokes.map((s) => s.map((p) => ({ ...p })));
+    const first = strokes[0];
+    const midPt = first[Math.floor(first.length / 2)];
+    const sh = {
+      id: uid(),
       type: "draw",
-      pts: latlngs.map((p) => ({ lat: p.lat, lon: p.lng })),
+      name: name || "Çizim",
+      strokes,
+      labelLat: midPt.lat,
+      labelLon: midPt.lon,
+      savedAt: new Date().toISOString(),
     };
-    showResult("Çizim", `<strong>Nokta sayısı:</strong> ${latlngs.length}<br/>Kaydedebilir veya temizleyebilirsiniz.`);
-  }
-}
-
-function showResult(title, html) {
-  $("#resultTitle").textContent = title;
-  $("#resultBody").innerHTML = html;
-  openSheet("#sheetResult");
-}
-
-/** Permanent text label on map */
-function addMapLabel(layer, lat, lon, html, multi = false) {
-  const icon = L.divIcon({
-    className: "map-label-icon",
-    html: `<div class="map-label${multi ? " multi" : ""}">${html}</div>`,
-    iconSize: [0, 0],
-    iconAnchor: [0, 0],
+    state.drawings.push(sh);
+    persist();
+    drawStrokes = [];
+    clearTemp();
+    $("#drawBar").hidden = true;
+    activeTool = null;
+    resetMapInteractions();
+    clearToolHighlight();
+    setModeBanner("");
+    renderSaved();
+    toast(`Kaydedildi: ${sh.name}`);
   });
-  return L.marker([lat, lon], { icon, interactive: false, keyboard: false }).addTo(layer);
-}
-
-function midLatLng(a, b) {
-  return { lat: (a.lat + b.lat) / 2, lon: (a.lon + b.lon) / 2 };
-}
-
-function centroid(pts) {
-  let lat = 0;
-  let lon = 0;
-  for (const p of pts) {
-    lat += p.lat;
-    lon += p.lon;
-  }
-  return { lat: lat / pts.length, lon: lon / pts.length };
-}
-
-function labelMeasureLine(layer, a, b, dist, mil) {
-  const mid = midLatLng(a, b);
-  addMapLabel(
-    layer,
-    mid.lat,
-    mid.lon,
-    `<span class="hl">${fmtDist(dist)}</span><br/>${mil} milyem`,
-    true
-  );
-}
-
-function labelCircle(layer, lat, lon, radius) {
-  const edge = destination(lat, lon, 1600, radius); // doğu kenarı
-  addMapLabel(
-    layer,
-    edge.lat,
-    edge.lon,
-    `r <span class="hl">${fmtDist(radius)}</span>`
-  );
-  addMapLabel(
-    layer,
-    lat,
-    lon,
-    `<span class="hl">${fmtArea(circleArea(radius))}</span>`
-  );
-}
-
-function labelArc(layer, lat, lon, mainMil, dist, left, right, startMil, endMil) {
-  const midPt = destination(lat, lon, mainMil, dist);
-  const leftPt = destination(lat, lon, startMil, dist);
-  const rightPt = destination(lat, lon, endMil, dist);
-  const midRay = midLatLng({ lat, lon }, midPt);
-  addMapLabel(
-    layer,
-    midRay.lat,
-    midRay.lon,
-    `<span class="hl">${mainMil}</span> milyem<br/>${fmtDist(dist)}`,
-    true
-  );
-  addMapLabel(layer, leftPt.lat, leftPt.lon, `Sol <span class="hl">${left}</span>`);
-  addMapLabel(layer, rightPt.lat, rightPt.lon, `Sağ <span class="hl">${right}</span>`);
-}
-
-function labelArea(layer, pts, area) {
-  const c = centroid(pts);
-  addMapLabel(layer, c.lat, c.lon, `<span class="hl">${fmtArea(area)}</span>`);
 }
 
 function drawCircleAt(lat, lon) {
   const r = Number($("#circleRadius").value) || 500;
+  const name = $("#circleName").value.trim();
   clearTemp();
   L.circle([lat, lon], { radius: r, color: "#3d9a6a", fillOpacity: 0.15, weight: 2 }).addTo(tempLayer);
   L.circleMarker([lat, lon], { radius: 5, color: "#e8b84a", fillOpacity: 1 }).addTo(tempLayer);
-  // yarıçap çizgisi
   const edge = destination(lat, lon, 1600, r);
   L.polyline(
     [
@@ -459,11 +607,12 @@ function drawCircleAt(lat, lon) {
     ],
     { color: "#e8b84a", weight: 2, dashArray: "4 4" }
   ).addTo(tempLayer);
-  labelCircle(tempLayer, lat, lon, r);
+  labelCircleShape(tempLayer, lat, lon, r, name);
   const area = circleArea(r);
-  const html = `<strong>Yarıçap:</strong> ${fmtDist(r)}<br/><strong>Alan:</strong> ${fmtArea(area)}<br/><strong>Merkez MGRS:</strong> ${toMgrs(lat, lon)}`;
+  const html = `<strong>Yarıçap:</strong> ${fmtDist(r)}<br/><strong>Alan:</strong> ${fmtArea(area)}<br/><strong>MGRS:</strong> ${toMgrs(lat, lon)}`;
   $("#circleResult").innerHTML = html;
-  pendingShape = { type: "circle", center: { lat, lon }, radius: r, area };
+  pendingShape = { type: "circle", center: { lat, lon }, radius: r, area, name };
+  showResult("Daire", html, name);
   toast("Daire çizildi");
 }
 
@@ -472,10 +621,13 @@ function drawArcAt(lat, lon) {
   const dist = Number($("#arcDist").value) || 1000;
   const right = Number($("#arcRight").value) || 0;
   const left = Number($("#arcLeft").value) || 0;
+  const name = $("#arcName").value.trim();
   clearTemp();
   const { pts, startMil, endMil, mainMil } = arcPoints(lat, lon, main, dist, left, right);
-  const latlngs = pts.map((p) => [p.lat, p.lon]);
-  L.polyline(latlngs, { color: "#e8b84a", weight: 3 }).addTo(tempLayer);
+  L.polyline(
+    pts.map((p) => [p.lat, p.lon]),
+    { color: "#e8b84a", weight: 3 }
+  ).addTo(tempLayer);
   const leftPt = destination(lat, lon, startMil, dist);
   const rightPt = destination(lat, lon, endMil, dist);
   const midPt = destination(lat, lon, mainMil, dist);
@@ -501,13 +653,12 @@ function drawArcAt(lat, lon) {
     { color: "#d64545", weight: 1 }
   ).addTo(tempLayer);
   L.circleMarker([lat, lon], { radius: 5, color: "#fff", fillOpacity: 1 }).addTo(tempLayer);
-  labelArc(tempLayer, lat, lon, mainMil, dist, left, right, startMil, endMil);
-
+  labelArcShape(tempLayer, lat, lon, mainMil, dist, left, right, startMil, endMil, name);
   const html =
     `<strong>İstikamet:</strong> ${mainMil} milyem<br/>` +
     `<strong>Mesafe:</strong> ${fmtDist(dist)}<br/>` +
-    `<strong>Sağ yan hududu:</strong> ${right} <span style="color:#8a9bb0">(→ ${endMil})</span><br/>` +
-    `<strong>Sol yan hududu:</strong> ${left} <span style="color:#8a9bb0">(→ ${startMil})</span><br/>` +
+    `<strong>Sağ:</strong> ${right} (→ ${endMil})<br/>` +
+    `<strong>Sol:</strong> ${left} (→ ${startMil})<br/>` +
     `<strong>Merkez:</strong> ${toMgrs(lat, lon)}`;
   $("#arcResult").innerHTML = html;
   pendingShape = {
@@ -520,13 +671,15 @@ function drawArcAt(lat, lon) {
     startMil,
     endMil,
     pts,
+    name,
   };
+  showResult("Kavis", html, name);
   toast("Kavis çizildi");
 }
 
 function savePointAt(lat, lon, name) {
   const pt = {
-    id: crypto.randomUUID?.() || String(Date.now()),
+    id: uid(),
     name: name || "Nokta",
     lat,
     lon,
@@ -537,35 +690,69 @@ function savePointAt(lat, lon, name) {
   persist();
   renderSaved();
   toast(`Kaydedildi: ${pt.name}`);
+  map.setView([lat, lon], Math.max(map.getZoom(), 14));
 }
 
 function renderSaved() {
   savedLayer.clearLayers();
   for (const p of state.points) {
-    const m = L.circleMarker([p.lat, p.lon], {
+    L.circleMarker([p.lat, p.lon], {
       radius: 7,
       color: "#e8b84a",
       fillColor: "#1a2332",
       fillOpacity: 1,
       weight: 3,
-    }).addTo(savedLayer);
-    m.bindPopup(`<b>${escapeHtml(p.name)}</b><br/>${p.mgrs || toMgrs(p.lat, p.lon)}`);
+    })
+      .addTo(savedLayer)
+      .bindPopup(`<b>${escapeHtml(p.name)}</b><br/>${escapeHtml(p.mgrs || toMgrs(p.lat, p.lon))}`);
+    addMapLabel(
+      savedLayer,
+      p.lat,
+      p.lon,
+      `<span class="name">${escapeHtml(p.name)}</span>`,
+      false
+    );
   }
-  for (const sh of state.shapes) {
-    addShapeToLayer(sh, savedLayer);
-  }
+  for (const sh of state.shapes) addShapeToLayer(sh, savedLayer);
   for (const d of state.drawings) {
-    if (d.pts?.length) {
+    if (d.strokes?.length) {
+      for (const stroke of d.strokes) {
+        if (stroke?.length) {
+          L.polyline(
+            stroke.map((p) => [p.lat, p.lon]),
+            { color: "#e8b84a", weight: 3, opacity: 0.9 }
+          ).addTo(savedLayer);
+        }
+      }
+      if (d.name && d.labelLat != null) {
+        addMapLabel(
+          savedLayer,
+          d.labelLat,
+          d.labelLon,
+          `<span class="name">${escapeHtml(d.name)}</span>`
+        );
+      }
+    } else if (d.pts?.length) {
       L.polyline(
         d.pts.map((p) => [p.lat, p.lon]),
-        { color: d.color || "#e8b84a", weight: 3, opacity: 0.85 }
+        { color: "#e8b84a", weight: 3, opacity: 0.9 }
       ).addTo(savedLayer);
+      if (d.name) {
+        const midPt = d.pts[Math.floor(d.pts.length / 2)];
+        addMapLabel(
+          savedLayer,
+          midPt.lat,
+          midPt.lon,
+          `<span class="name">${escapeHtml(d.name)}</span>`
+        );
+      }
     }
   }
   renderLists();
 }
 
 function addShapeToLayer(sh, layer) {
+  const name = sh.name || "";
   if (sh.type === "circle" && sh.center) {
     L.circle([sh.center.lat, sh.center.lon], {
       radius: sh.radius,
@@ -581,22 +768,14 @@ function addShapeToLayer(sh, layer) {
       ],
       { color: "#e8b84a", weight: 2, dashArray: "4 4" }
     ).addTo(layer);
-    labelCircle(layer, sh.center.lat, sh.center.lon, sh.radius);
+    labelCircleShape(layer, sh.center.lat, sh.center.lon, sh.radius, name);
   } else if (sh.type === "arc" && sh.pts) {
     L.polyline(
       sh.pts.map((p) => [p.lat, p.lon]),
       { color: "#e8b84a", weight: 3 }
     ).addTo(layer);
     if (sh.center) {
-      const midPt = destination(sh.center.lat, sh.center.lon, sh.mainMil, sh.dist);
-      L.polyline(
-        [
-          [sh.center.lat, sh.center.lon],
-          [midPt.lat, midPt.lon],
-        ],
-        { color: "#3d9a6a", weight: 2, dashArray: "6 4" }
-      ).addTo(layer);
-      labelArc(
+      labelArcShape(
         layer,
         sh.center.lat,
         sh.center.lon,
@@ -605,7 +784,8 @@ function addShapeToLayer(sh, layer) {
         sh.left,
         sh.right,
         sh.startMil,
-        sh.endMil
+        sh.endMil,
+        name
       );
     }
   } else if ((sh.type === "measure" || sh.type === "bearing") && sh.pts?.length === 2) {
@@ -616,26 +796,14 @@ function addShapeToLayer(sh, layer) {
       ],
       { color: "#3d9a6a", weight: 2 }
     ).addTo(layer);
-    labelMeasureLine(layer, sh.pts[0], sh.pts[1], sh.dist, sh.mil);
+    labelLine(layer, sh.pts[0], sh.pts[1], sh.dist, sh.mil, name);
   } else if (sh.type === "area" && sh.pts) {
     L.polygon(
       sh.pts.map((p) => [p.lat, p.lon]),
       { color: "#4a9fd4", weight: 2, fillOpacity: 0.15 }
     ).addTo(layer);
-    labelArea(layer, sh.pts, sh.area);
-  } else if (sh.type === "draw" && sh.pts) {
-    L.polyline(
-      sh.pts.map((p) => [p.lat, p.lon]),
-      { color: "#e8b84a", weight: 3 }
-    ).addTo(layer);
+    labelAreaShape(layer, sh.pts, sh.area, name);
   }
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
 
 function renderLists() {
@@ -645,57 +813,58 @@ function renderLists() {
         .map(
           (p) => `<li>
         <div class="meta"><div class="name">${escapeHtml(p.name)}</div><div class="sub">${escapeHtml(p.mgrs || "")}</div></div>
-        <button type="button" class="btn icon" data-goto="${p.id}">➤</button>
-        <button type="button" class="btn icon danger" data-del-pt="${p.id}">🗑</button>
+        <button type="button" class="btn icon" data-goto="${escapeHtml(p.id)}">➤</button>
+        <button type="button" class="btn icon danger" data-del-pt="${escapeHtml(p.id)}">🗑</button>
       </li>`
         )
         .join("")
     : `<li><div class="meta"><div class="sub">Kayıtlı nokta yok</div></div></li>`;
 
+  const items = [
+    ...state.shapes.map((s, i) => ({
+      kind: "shape",
+      i,
+      name: s.name || s.type,
+      sub: s.summary || s.type,
+    })),
+    ...state.drawings.map((d, i) => ({
+      kind: "draw",
+      i,
+      name: d.name || "Çizim",
+      sub: `${d.strokes?.length || 1} çizgi`,
+    })),
+  ];
   const sl = $("#shapesList");
-  sl.innerHTML = state.shapes.length
-    ? state.shapes
+  sl.innerHTML = items.length
+    ? items
         .map(
-          (s, i) => `<li>
-        <div class="meta"><div class="name">${escapeHtml(s.label || s.type)}</div><div class="sub">${escapeHtml(s.summary || "")}</div></div>
-        <button type="button" class="btn icon danger" data-del-sh="${i}">🗑</button>
+          (x) => `<li>
+        <div class="meta"><div class="name">${escapeHtml(x.name)}</div><div class="sub">${escapeHtml(x.sub)}</div></div>
+        <button type="button" class="btn icon danger" data-del-kind="${x.kind}" data-del-i="${x.i}">🗑</button>
       </li>`
         )
         .join("")
     : `<li><div class="meta"><div class="sub">Kayıtlı şekil yok</div></div></li>`;
 }
 
-async function updateInfoFor(lat, lon, opts = {}) {
+async function updateInfo(lat, lon, opts = {}) {
   $("#infoMgrs").textContent = toMgrs(lat, lon);
   if (lastGps && !opts.fromMap) {
     $("#infoAcc").textContent = lastGps.acc != null ? `±${Math.round(lastGps.acc)} m` : "—";
-  } else if (opts.fromMap && lastGps) {
-    /* keep gps accuracy when panning */
   }
-
   if (!navigator.onLine) {
     $("#infoElev").textContent = "çevrimdışı";
     $("#infoSlope").textContent = "—";
-    if (opts.forceWeather) $("#infoWeather").textContent = "çevrimdışı";
     return;
   }
-
   try {
     const { elev, slope } = await getSlopeNear(lat, lon);
     if (elev != null) $("#infoElev").textContent = `${Math.round(elev)} m`;
-    else $("#infoElev").textContent = "—";
     if (slope != null) $("#infoSlope").textContent = `%${slope.toFixed(1)}`;
-    else $("#infoSlope").textContent = "—";
-  } catch {
-    /* ignore */
-  }
-
-  if (opts.forceWeather !== false) {
-    /* only auto-refresh weather on locate / weather button to save API */
-  }
+  } catch (_) {}
 }
 
-async function refreshWeatherAtFocus() {
+async function refreshWeather() {
   const c = lastGps || { lat: map.getCenter().lat, lon: map.getCenter().lng };
   const lat = c.lat;
   const lon = c.lon ?? c.lng;
@@ -703,28 +872,20 @@ async function refreshWeatherAtFocus() {
   const w = await getWeather(lat, lon);
   if (!w) {
     $("#infoWeather").textContent = navigator.onLine ? "alınamadı" : "çevrimdışı";
-    toast("Hava durumu alınamadı");
-    return;
+    return toast("Hava alınamadı");
   }
   $("#infoWeather").textContent = `${w.desc}, ${w.temp}°C, nem %${w.humidity}, rüzgar ${w.wind} m/s`;
   toast("Hava güncellendi");
 }
 
 function startGps() {
-  if (!navigator.geolocation) {
-    toast("Konum desteklenmiyor");
-    return;
-  }
-  watchId = navigator.geolocation.watchPosition(
+  if (!navigator.geolocation) return toast("Konum desteklenmiyor");
+  navigator.geolocation.watchPosition(
     (pos) => {
       const { latitude: lat, longitude: lon, accuracy: acc, altitude: alt } = pos.coords;
       lastGps = { lat, lon, acc, alt };
-      // Satellite count is not in standard Geolocation API
-      const satHint = pos.coords.altitudeAccuracy != null ? "GPS/GNSS" : "Konum";
-      $("#infoAcc").textContent =
-        acc != null ? `±${Math.round(acc)} m (${satHint})` : "—";
+      $("#infoAcc").textContent = acc != null ? `±${Math.round(acc)} m (GPS)` : "—";
       if (alt != null) $("#infoElev").textContent = `${Math.round(alt)} m (GPS)`;
-
       if (!gpsMarker) {
         gpsMarker = L.circleMarker([lat, lon], {
           radius: 8,
@@ -756,15 +917,15 @@ function goToLocation() {
     toast("Konum bekleniyor…");
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const { latitude: lat, longitude: lon, accuracy: acc, altitude: alt } = pos.coords;
-        lastGps = { lat, lon, acc, alt };
-        map.setView([lat, lon], Math.max(map.getZoom(), 15));
-        updateInfoFor(lat, lon);
-        getSlopeNear(lat, lon).then(({ elev, slope }) => {
-          if (elev != null && alt == null) $("#infoElev").textContent = `${Math.round(elev)} m`;
-          if (slope != null) $("#infoSlope").textContent = `%${slope.toFixed(1)}`;
-        });
-        refreshWeatherAtFocus();
+        lastGps = {
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          acc: pos.coords.accuracy,
+          alt: pos.coords.altitude,
+        };
+        map.setView([lastGps.lat, lastGps.lon], Math.max(map.getZoom(), 15));
+        updateInfo(lastGps.lat, lastGps.lon);
+        refreshWeather();
       },
       () => toast("Konum alınamadı"),
       { enableHighAccuracy: true, timeout: 12000 }
@@ -772,8 +933,43 @@ function goToLocation() {
     return;
   }
   map.setView([lastGps.lat, lastGps.lon], Math.max(map.getZoom(), 15));
-  updateInfoFor(lastGps.lat, lastGps.lon);
-  refreshWeatherAtFocus();
+  updateInfo(lastGps.lat, lastGps.lon);
+  refreshWeather();
+}
+
+function syncCircleCenterUi() {
+  $("#circleSavedWrap").classList.toggle("hidden", $("#circleCenter").value !== "saved");
+}
+function syncArcCenterUi() {
+  $("#arcSavedWrap").classList.toggle("hidden", $("#arcCenter").value !== "saved");
+}
+function syncSavePtUi() {
+  const src = $("#savePtSrc").value;
+  $("#savePtManual").classList.toggle("hidden", src !== "manual");
+  const fmt = $("#savePtFmt").value;
+  $("#savePtMgrsWrap").classList.toggle("hidden", fmt !== "mgrs");
+  $("#savePtLlWrap").classList.toggle("hidden", fmt !== "ll");
+}
+
+function defaultLabel(sh) {
+  if (sh.type === "circle") return "Daire";
+  if (sh.type === "arc") return "Kavis";
+  if (sh.type === "area") return "Alan";
+  if (sh.type === "bearing") return "İstikamet";
+  if (sh.type === "measure") return "Mesafe";
+  if (sh.type === "draw") return "Çizim";
+  return "Şekil";
+}
+
+function mergeById(a, b) {
+  const m = new Map(a.map((x) => [x.id, x]));
+  for (const x of b) m.set(x.id || uid(), x);
+  return [...m.values()];
+}
+
+function dateStamp() {
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 function bindUi() {
@@ -797,21 +993,67 @@ function bindUi() {
         return;
       }
       if (activeTool === t && t !== "weather") {
+        if (t === "draw") exitDrawMode(true);
         setTool(null);
         clearTemp();
         setModeBanner("");
-        $$("#toolbar .btn").forEach((x) => x.classList.remove("active"));
+        clearToolHighlight();
         return;
       }
       setTool(t);
     })
   );
 
+  $("#measureMode").addEventListener("change", () => {
+    $("#measureSavedFields").classList.toggle("hidden", $("#measureMode").value !== "saved");
+  });
+
+  $("#btnMeasureGo").addEventListener("click", () => {
+    const mode = $("#measureMode").value;
+    closeSheets();
+    activeTool = measureKind;
+    highlightTool(measureKind);
+    clearTemp();
+
+    if (mode === "saved") {
+      const a = getPointById($("#measureFrom").value);
+      const b = getPointById($("#measureTo").value);
+      if (!a || !b) return toast("İki kayıtlı nokta seçin");
+      finishMeasureLine({ lat: a.lat, lon: a.lon }, { lat: b.lat, lon: b.lon });
+      return;
+    }
+    if (mode === "gps-map") {
+      if (!lastGps) return toast("Konum yok");
+      measurePts = [{ lat: lastGps.lat, lon: lastGps.lon }];
+      L.circleMarker([lastGps.lat, lastGps.lon], {
+        radius: 6,
+        color: "#e8b84a",
+        fillOpacity: 1,
+      }).addTo(tempLayer);
+      pickMode = "measure2";
+      setModeBanner("2. noktaya dokun");
+      return;
+    }
+    // map: two taps via pickMode measure1 → measure2
+    measurePts = [];
+    pickMode = "measure1";
+    setModeBanner("1. noktaya dokun");
+  });
+
+  $("#circleCenter").addEventListener("change", syncCircleCenterUi);
+  $("#arcCenter").addEventListener("change", syncArcCenterUi);
+  $("#savePtSrc").addEventListener("change", syncSavePtUi);
+  $("#savePtFmt").addEventListener("change", syncSavePtUi);
+
   $("#btnCircleDraw").addEventListener("click", () => {
     const mode = $("#circleCenter").value;
     if (mode === "gps") {
       if (!lastGps) return toast("Konum yok");
       drawCircleAt(lastGps.lat, lastGps.lon);
+    } else if (mode === "saved") {
+      const p = getPointById($("#circleSavedPt").value);
+      if (!p) return toast("Nokta seçin");
+      drawCircleAt(p.lat, p.lon);
     } else {
       pickMode = "circle";
       closeSheets();
@@ -828,6 +1070,10 @@ function bindUi() {
     if (mode === "gps") {
       if (!lastGps) return toast("Konum yok");
       drawArcAt(lastGps.lat, lastGps.lon);
+    } else if (mode === "saved") {
+      const p = getPointById($("#arcSavedPt").value);
+      if (!p) return toast("Nokta seçin");
+      drawArcAt(p.lat, p.lon);
     } else {
       pickMode = "arc";
       closeSheets();
@@ -850,6 +1096,24 @@ function bindUi() {
       const c = map.getCenter();
       savePointAt(c.lat, c.lng, name);
       closeSheets();
+    } else if (src === "manual") {
+      try {
+        let lat;
+        let lon;
+        if ($("#savePtFmt").value === "mgrs") {
+          ({ lat, lon } = fromMgrs($("#savePtMgrs").value));
+        } else {
+          lat = Number($("#savePtLat").value);
+          lon = Number($("#savePtLon").value);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+            throw new Error("Geçersiz enlem/boylam");
+          }
+        }
+        savePointAt(lat, lon, name);
+        closeSheets();
+      } catch (err) {
+        toast("Koordinat hatası: " + (err.message || err));
+      }
     } else {
       pickMode = "savept";
       closeSheets();
@@ -864,58 +1128,60 @@ function bindUi() {
 
   $("#btnResultSave").addEventListener("click", () => {
     if (!pendingShape) return toast("Kayıt yok");
-    const sh = { ...pendingShape, id: String(Date.now()), savedAt: new Date().toISOString() };
-    if (sh.type === "circle") {
-      sh.label = "Daire";
-      sh.summary = `r=${sh.radius}m · ${fmtArea(sh.area)}`;
-      state.shapes.push(sh);
-    } else if (sh.type === "arc") {
-      sh.label = "Kavis";
-      sh.summary = `${sh.mainMil} / R${sh.right} S${sh.left} · ${sh.dist}m`;
-      state.shapes.push(sh);
-    } else if (sh.type === "draw") {
-      sh.label = "Çizim";
-      state.drawings.push(sh);
-    } else if (sh.type === "area") {
-      sh.label = "Alan";
-      sh.summary = fmtArea(sh.area);
-      state.shapes.push(sh);
-    } else {
-      sh.label = sh.type === "bearing" ? "İstikamet" : "Mesafe";
-      sh.summary = `${fmtDist(sh.dist)} · ${sh.mil} milyem`;
-      state.shapes.push(sh);
-    }
+    const name = $("#resultName").value.trim() || pendingShape.name || "";
+    const sh = {
+      ...pendingShape,
+      id: uid(),
+      name: name || defaultLabel(pendingShape),
+      savedAt: new Date().toISOString(),
+    };
+    if (sh.type === "circle") sh.summary = `r=${sh.radius}m · ${fmtArea(sh.area)}`;
+    else if (sh.type === "arc") sh.summary = `${sh.mainMil} · ${sh.dist}m`;
+    else if (sh.type === "area") sh.summary = fmtArea(sh.area);
+    else sh.summary = `${fmtDist(sh.dist)} · ${sh.mil} milyem`;
+    state.shapes.push(sh);
     persist();
     renderSaved();
     clearTemp();
     closeSheets();
-    toast("Kaydedildi");
+    toast(`Kaydedildi: ${sh.name}`);
   });
 
+  $("#btnNameOk").addEventListener("click", () => {
+    const n = $("#nameInput").value.trim();
+    const cb = nameCallback;
+    nameCallback = null;
+    closeSheets();
+    if (cb) cb(n);
+  });
+
+  $("#btnDrawUndo").addEventListener("click", undoDrawStroke);
+  $("#btnDrawClear").addEventListener("click", clearDrawStrokes);
+  $("#btnDrawSave").addEventListener("click", saveDrawStrokes);
+
   $("#btnExportAll").addEventListener("click", async () => {
-    const text = exportJson(state, "all");
-    const r = await shareOrDownload(`mksi-${dateStamp()}.json`, text);
-    if (r !== "abort") toast(r === "download" ? "Dosya indirildi" : "Paylaşım açıldı");
+    const r = await shareOrDownload(`mksi-${dateStamp()}.json`, exportJson(state, "all"));
+    if (r !== "abort") toast(r.startsWith("shared") ? "Paylaşım açıldı" : "Dosya indirildi");
   });
   $("#btnExportPts").addEventListener("click", async () => {
-    const text = exportJson(state, "points");
-    const r = await shareOrDownload(`mksi-noktalar-${dateStamp()}.json`, text);
-    if (r !== "abort") toast(r === "download" ? "Dosya indirildi" : "Paylaşım açıldı");
+    const r = await shareOrDownload(
+      `mksi-noktalar-${dateStamp()}.json`,
+      exportJson(state, "points")
+    );
+    if (r !== "abort") toast(r.startsWith("shared") ? "Paylaşım açıldı" : "Dosya indirildi");
   });
   $("#btnImport").addEventListener("click", () => $("#importFile").click());
   $("#importFile").addEventListener("change", async (ev) => {
     const file = ev.target.files?.[0];
     if (!file) return;
     try {
-      const text = await file.text();
-      const data = parseImport(text);
+      const data = parseImport(await file.text());
       if (data.points.length) state.points = mergeById(state.points, data.points);
       if (data.shapes.length) state.shapes = state.shapes.concat(data.shapes);
       if (data.drawings.length) state.drawings = state.drawings.concat(data.drawings);
       await persist();
       renderSaved();
       toast("İçe aktarıldı");
-      renderLists();
     } catch (e) {
       toast("Aktarım hatası: " + e.message);
     }
@@ -951,28 +1217,18 @@ function bindUi() {
   });
 
   $("#shapesList").addEventListener("click", (e) => {
-    const del = e.target.closest("[data-del-sh]");
-    if (del) {
-      state.shapes.splice(Number(del.dataset.delSh), 1);
-      persist();
-      renderSaved();
-    }
+    const del = e.target.closest("[data-del-kind]");
+    if (!del) return;
+    const i = Number(del.dataset.delI);
+    if (del.dataset.delKind === "shape") state.shapes.splice(i, 1);
+    else state.drawings.splice(i, 1);
+    persist();
+    renderSaved();
   });
 
   window.addEventListener("online", setNetDot);
   window.addEventListener("offline", setNetDot);
   setNetDot();
-}
-
-function mergeById(a, b) {
-  const map = new Map(a.map((x) => [x.id, x]));
-  for (const x of b) map.set(x.id || String(Math.random()), x);
-  return [...map.values()];
-}
-
-function dateStamp() {
-  const d = new Date();
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 async function registerSw() {
@@ -989,7 +1245,7 @@ async function boot() {
   startGps();
   registerSw();
   const c = map.getCenter();
-  updateInfoFor(c.lat, c.lng, { fromMap: true, forceWeather: false });
+  updateInfo(c.lat, c.lng, { fromMap: true });
 }
 
 boot();

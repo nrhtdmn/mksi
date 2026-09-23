@@ -11,7 +11,7 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>MKSI Harita</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -31,6 +31,12 @@
     <div class="mode-banner" id="modeBanner"></div>
     <button type="button" class="locate-fab" id="btnLocate" title="Konumuma git" aria-label="Konum">⌖</button>
 
+    <div class="draw-bar" id="drawBar" hidden>
+      <button type="button" class="btn" id="btnDrawUndo">Geri</button>
+      <button type="button" class="btn danger" id="btnDrawClear">Temizle</button>
+      <button type="button" class="btn accent" id="btnDrawSave">Kaydet</button>
+    </div>
+
     <div class="info-strip" id="infoStrip">
       <div class="full"><span class="label">MGRS </span><span class="val mgrs" id="infoMgrs">—</span></div>
       <div><span class="label">Doğruluk </span><span class="val" id="infoAcc">—</span></div>
@@ -40,28 +46,60 @@
     </div>
 
     <nav class="toolbar" id="toolbar">
-      <button type="button" class="btn" data-tool="measure">Mesafe</button>
-      <button type="button" class="btn" data-tool="bearing">İstikamet</button>
-      <button type="button" class="btn" data-tool="circle">Daire</button>
-      <button type="button" class="btn" data-tool="arc">Kavis</button>
-      <button type="button" class="btn" data-tool="area">Alan</button>
-      <button type="button" class="btn" data-tool="finishArea">Alan✓</button>
-      <button type="button" class="btn" data-tool="draw">Kalem</button>
-      <button type="button" class="btn" data-tool="savept">Nokta+</button>
-      <button type="button" class="btn" data-tool="weather">Hava</button>
+      <button type="button" class="btn" data-tool="measure"><span class="ico">↔</span><span class="txt">Mesafe</span></button>
+      <button type="button" class="btn" data-tool="bearing"><span class="ico">↗</span><span class="txt">İstikamet</span></button>
+      <button type="button" class="btn" data-tool="circle"><span class="ico">○</span><span class="txt">Daire</span></button>
+      <button type="button" class="btn" data-tool="arc"><span class="ico">⌒</span><span class="txt">Kavis</span></button>
+      <button type="button" class="btn" data-tool="area"><span class="ico">⬡</span><span class="txt">Alan</span></button>
+      <button type="button" class="btn" data-tool="finishArea"><span class="ico">✓</span><span class="txt">Bitir</span></button>
+      <button type="button" class="btn" data-tool="draw"><span class="ico">✎</span><span class="txt">Kalem</span></button>
+      <button type="button" class="btn" data-tool="savept"><span class="ico">📍</span><span class="txt">Nokta</span></button>
+      <button type="button" class="btn" data-tool="weather"><span class="ico">☁</span><span class="txt">Hava</span></button>
     </nav>
   </div>
 
   <div class="sheet-backdrop" id="backdrop"></div>
 
-  <!-- Tool sheets -->
+  <div class="sheet" id="sheetMeasure">
+    <div class="sheet-head">
+      <h2 id="measureSheetTitle">Mesafe</h2>
+      <button type="button" class="btn icon close-sheet">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="field">
+        <label>Kaynak</label>
+        <select id="measureMode">
+          <option value="map">Haritada iki nokta</option>
+          <option value="saved">Kayıtlı noktalardan</option>
+          <option value="gps-map">Konumum → haritada seç</option>
+        </select>
+      </div>
+      <div id="measureSavedFields" class="hidden">
+        <div class="field">
+          <label>Başlangıç</label>
+          <select id="measureFrom"></select>
+        </div>
+        <div class="field">
+          <label>Bitiş</label>
+          <select id="measureTo"></select>
+        </div>
+      </div>
+      <div class="field">
+        <label>İsim (kayıt için)</label>
+        <input type="text" id="measureName" placeholder="örn. Hat-1" maxlength="64" />
+      </div>
+      <div class="actions">
+        <button type="button" class="btn accent" id="btnMeasureGo">Başla / Hesapla</button>
+      </div>
+    </div>
+  </div>
+
   <div class="sheet" id="sheetCircle">
     <div class="sheet-head">
       <h2>Daire</h2>
       <button type="button" class="btn icon close-sheet">✕</button>
     </div>
     <div class="sheet-body">
-      <p class="hint">Merkez: konumunuz veya haritada bir dokunuş. Yarıçap metre cinsinden.</p>
       <div class="field-row">
         <div class="field">
           <label>Yarıçap (m)</label>
@@ -72,8 +110,17 @@
           <select id="circleCenter">
             <option value="gps">Konumum</option>
             <option value="map">Haritada seç</option>
+            <option value="saved">Kayıtlı nokta</option>
           </select>
         </div>
+      </div>
+      <div class="field hidden" id="circleSavedWrap">
+        <label>Nokta</label>
+        <select id="circleSavedPt"></select>
+      </div>
+      <div class="field">
+        <label>İsim</label>
+        <input type="text" id="circleName" placeholder="örn. Güvenlik bölgesi" maxlength="64" />
       </div>
       <div class="actions">
         <button type="button" class="btn accent" id="btnCircleDraw">Çiz</button>
@@ -89,13 +136,18 @@
       <button type="button" class="btn icon close-sheet">✕</button>
     </div>
     <div class="sheet-body">
-      <p class="hint">İstikamet 6400’lük milyem. Sağ/sol yan hudut göreli yazılır (ör. istikamet 3200, sağ 50 → 3250’de biter; sol 60 → 3140’ta biter).</p>
+      <p class="hint">İstikamet 6400’lük milyem. Sağ/sol yan hudut göreli (ör. 3200, sağ 50 → 3250; sol 60 → 3140).</p>
       <div class="field">
         <label>Merkez</label>
         <select id="arcCenter">
           <option value="gps">Konumum</option>
           <option value="map">Haritada seç</option>
+          <option value="saved">Kayıtlı nokta</option>
         </select>
+      </div>
+      <div class="field hidden" id="arcSavedWrap">
+        <label>Nokta</label>
+        <select id="arcSavedPt"></select>
       </div>
       <div class="field-row">
         <div class="field">
@@ -117,6 +169,10 @@
           <input type="number" id="arcLeft" value="60" min="0" max="3200" step="1" />
         </div>
       </div>
+      <div class="field">
+        <label>İsim</label>
+        <input type="text" id="arcName" placeholder="örn. Ateş sahası" maxlength="64" />
+      </div>
       <div class="actions">
         <button type="button" class="btn accent" id="btnArcDraw">Kavis çiz</button>
         <button type="button" class="btn" id="btnArcClear">Temizle</button>
@@ -131,14 +187,37 @@
       <button type="button" class="btn icon close-sheet">✕</button>
     </div>
     <div class="sheet-body">
-      <p class="hint">Kaynak seçin, isteğe bağlı isim verin.</p>
       <div class="field">
         <label>Kaynak</label>
         <select id="savePtSrc">
           <option value="gps">Konumum</option>
           <option value="map">Haritada seç</option>
           <option value="cross">Harita merkezi</option>
+          <option value="manual">Koordinat gir</option>
         </select>
+      </div>
+      <div id="savePtManual" class="hidden">
+        <div class="field">
+          <label>Format</label>
+          <select id="savePtFmt">
+            <option value="mgrs">MGRS</option>
+            <option value="ll">Enlem / Boylam</option>
+          </select>
+        </div>
+        <div class="field" id="savePtMgrsWrap">
+          <label>MGRS</label>
+          <input type="text" id="savePtMgrs" placeholder="örn. 36S VH 12345 67890" />
+        </div>
+        <div class="field-row hidden" id="savePtLlWrap">
+          <div class="field">
+            <label>Enlem</label>
+            <input type="number" id="savePtLat" step="any" placeholder="39.92" />
+          </div>
+          <div class="field">
+            <label>Boylam</label>
+            <input type="number" id="savePtLon" step="any" placeholder="32.85" />
+          </div>
+        </div>
       </div>
       <div class="field">
         <label>İsim</label>
@@ -163,10 +242,10 @@
         <button type="button" class="btn danger" id="btnClearAll">Her şeyi sil</button>
       </div>
       <input type="file" id="importFile" accept="application/json,.json" class="hidden" />
-      <p class="hint">Dışa aktarılan JSON WhatsApp / Bip ile paylaşılabilir; diğer cihazda “İçe aktar” ile yüklenir. Veri tarayıcıda kalır, sunucuya gönderilmez.</p>
-      <h3 style="font-size:14px;margin:8px 0">Kayıtlı noktalar</h3>
+      <p class="hint">JSON WhatsApp / Bip ile paylaşılabilir. Veri tarayıcıda kalır.</p>
+      <h3 class="list-title">Kayıtlı noktalar</h3>
       <ul class="list" id="pointsList"></ul>
-      <h3 style="font-size:14px;margin:16px 0 8px">Şekiller</h3>
+      <h3 class="list-title">Şekiller / çizimler</h3>
       <ul class="list" id="shapesList"></ul>
     </div>
   </div>
@@ -178,16 +257,36 @@
     </div>
     <div class="sheet-body">
       <div class="result-box" id="resultBody"></div>
+      <div class="field">
+        <label>İsim</label>
+        <input type="text" id="resultName" placeholder="Bu şekle isim ver" maxlength="64" />
+      </div>
       <div class="actions">
-        <button type="button" class="btn" id="btnResultSave">Şekli kaydet</button>
+        <button type="button" class="btn accent" id="btnResultSave">Kaydet</button>
         <button type="button" class="btn danger" id="btnResultClear">Temizle</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheetName">
+    <div class="sheet-head">
+      <h2>İsim ver</h2>
+      <button type="button" class="btn icon close-sheet">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="field">
+        <label>İsim</label>
+        <input type="text" id="nameInput" placeholder="örn. Çizim-1" maxlength="64" />
+      </div>
+      <div class="actions">
+        <button type="button" class="btn accent" id="btnNameOk">Kaydet</button>
       </div>
     </div>
   </div>
 
   <div class="toast" id="toast"></div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://cdn.jsdelivr.net/npm/mgrs@2.0.0/dist/mgrs.min.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>
