@@ -435,6 +435,24 @@ html, body {
   margin: 12px 0 8px;
 }
 
+.copy-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.copy-row .val {
+  flex: 1;
+  font-family: ui-monospace, monospace;
+  font-size: 15px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.copy-row .btn {
+  flex-shrink: 0;
+}
+
 .toast {
   position: fixed;
   left: 50%;

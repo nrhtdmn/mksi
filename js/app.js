@@ -34,7 +34,7 @@ let gpsAccuracy = null;
 let lastGps = null;
 let lastFocus = { lat: 39.92, lon: 32.85 };
 let activeTool = null;
-let pickMode = null; // circle | arc | savept | measure1 | measure2
+let pickMode = null; // circle | arc | savept | parsel | measure1 | measure2
 let measureKind = "measure";
 let tempLayer;
 let savedLayer;
@@ -244,7 +244,7 @@ function fillPointSelects() {
       : state.points
           .map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`)
           .join("");
-  ["#measureFrom", "#measureTo", "#circleSavedPt", "#arcSavedPt"].forEach((sel) => {
+  ["#measureFrom", "#measureTo", "#circleSavedPt", "#arcSavedPt", "#parselSavedPt"].forEach((sel) => {
     const el = $(sel);
     if (el) el.innerHTML = opts;
   });
@@ -295,6 +295,10 @@ function setTool(name) {
   } else if (name === "savept") {
     syncSavePtUi();
     openSheet("#sheetSavePt");
+  } else if (name === "parsel") {
+    fillPointSelects();
+    syncParselSrcUi();
+    openSheet("#sheetParsel");
   } else if (name === "area") {
     areaPts = [];
     clearTemp();
@@ -552,6 +556,12 @@ function onMapClick(e) {
     pickMode = null;
     setModeBanner("");
     closeSheets();
+    return;
+  }
+  if (pickMode === "parsel") {
+    pickMode = null;
+    setModeBanner("");
+    showParselRedirect(lat, lon);
     return;
   }
   if (pickMode === "measure1") {
@@ -1359,6 +1369,38 @@ function syncSavePtUi() {
   $("#savePtLlWrap").classList.toggle("hidden", fmt !== "ll");
 }
 
+function syncParselSrcUi() {
+  $("#parselSavedWrap").classList.toggle("hidden", $("#parselSrc").value !== "saved");
+}
+
+const TKGM_PARSEL_URL = "https://parselsorgu.tkgm.gov.tr/";
+
+function showParselRedirect(lat, lon) {
+  const la = Number(lat).toFixed(6);
+  const lo = Number(lon).toFixed(6);
+  const latEl = $("#parselLatVal");
+  const lonEl = $("#parselLonVal");
+  latEl.textContent = la;
+  lonEl.textContent = lo;
+  latEl.dataset.v = la;
+  lonEl.dataset.v = lo;
+  openSheet("#sheetParselGo");
+  activeTool = null;
+  clearToolHighlight();
+  setModeBanner("");
+}
+
+async function openTkgmParselSite() {
+  const la = $("#parselLatVal").dataset.v;
+  if (la) {
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(la);
+    } catch (_) {}
+  }
+  window.open(TKGM_PARSEL_URL, "_blank", "noopener");
+  toast("Enlem panoda → Coğrafi sekmesi → yapıştır; sonra boylamı kopyalayın");
+}
+
 function fmtDateTime(d = new Date()) {
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -1548,6 +1590,34 @@ function bindUi() {
   $("#arcCenter").addEventListener("change", syncArcCenterUi);
   $("#savePtSrc").addEventListener("change", syncSavePtUi);
   $("#savePtFmt").addEventListener("change", syncSavePtUi);
+
+  $("#parselSrc").addEventListener("change", syncParselSrcUi);
+  $("#btnParselGo").addEventListener("click", () => {
+    const src = $("#parselSrc").value;
+    if (src === "cross") {
+      const c = map.getCenter();
+      showParselRedirect(c.lat, c.lng);
+    } else if (src === "gps") {
+      if (!lastGps) return toast("Konum bekleniyor…");
+      showParselRedirect(lastGps.lat, lastGps.lon);
+    } else if (src === "saved") {
+      const p = getPointById($("#parselSavedPt").value);
+      if (!p) return toast("Nokta seçin");
+      showParselRedirect(p.lat, p.lon);
+    } else {
+      pickMode = "parsel";
+      closeSheets();
+      setModeBanner("Parsel için noktaya dokun");
+      toast("Haritada noktaya dokunun");
+    }
+  });
+  $("#btnParselCopyLat").addEventListener("click", () =>
+    copyText($("#parselLatVal").dataset.v || $("#parselLatVal").textContent)
+  );
+  $("#btnParselCopyLon").addEventListener("click", () =>
+    copyText($("#parselLonVal").dataset.v || $("#parselLonVal").textContent)
+  );
+  $("#btnParselOpen").addEventListener("click", openTkgmParselSite);
 
   $("#btnCircleDraw").addEventListener("click", () => {
     const mode = $("#circleCenter").value;

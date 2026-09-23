@@ -62,6 +62,7 @@
       <button type="button" class="btn" data-tool="finishArea"><span class="ico">✓</span><span class="txt">Bitir</span></button>
       <button type="button" class="btn" data-tool="draw"><span class="ico">✎</span><span class="txt">Kalem</span></button>
       <button type="button" class="btn" data-tool="savept"><span class="ico">📍</span><span class="txt">Nokta</span></button>
+      <button type="button" class="btn" data-tool="parsel"><span class="ico">▤</span><span class="txt">Parsel</span></button>
       <button type="button" class="btn" data-tool="weather"><span class="ico">☁</span><span class="txt">Hava</span></button>
     </nav>
   </div>
@@ -200,6 +201,59 @@
         <button type="button" class="btn" id="btnArcClear">Temizle</button>
       </div>
       <div class="result-box" id="arcResult"></div>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheetParsel">
+    <div class="sheet-head">
+      <h2>Parsel sorgu</h2>
+      <button type="button" class="btn icon close-sheet">✕</button>
+    </div>
+    <div class="sheet-body">
+      <p class="hint">Nokta seçilir; TKGM Parsel Sorgu (Coğrafi) sayfası açılır. Tarayıcı güvenliği nedeniyle enlem/boylam alanları otomatik doldurulamaz — panoya kopyalayıp yapıştırın.</p>
+      <div class="field">
+        <label>Kaynak</label>
+        <select id="parselSrc">
+          <option value="cross">Harita merkezi (+)</option>
+          <option value="map">Haritada seç</option>
+          <option value="gps">Konumum</option>
+          <option value="saved">Kayıtlı nokta</option>
+        </select>
+      </div>
+      <div class="field hidden" id="parselSavedWrap">
+        <label>Nokta</label>
+        <select id="parselSavedPt"></select>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn accent" id="btnParselGo">Devam</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheetParselGo">
+    <div class="sheet-head">
+      <h2>TKGM’ye git</h2>
+      <button type="button" class="btn icon close-sheet">✕</button>
+    </div>
+    <div class="sheet-body">
+      <p class="hint">Açılan sitede <strong>Coğrafi</strong> sekmesine geçin → Enlem / Boylam yapıştırın → Sorgula.</p>
+      <div class="field">
+        <label>Enlem (latitude-input)</label>
+        <div class="copy-row">
+          <span class="val copyable mono" id="parselLatVal">—</span>
+          <button type="button" class="btn" id="btnParselCopyLat">Kopyala</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Boylam (longitude-input)</label>
+        <div class="copy-row">
+          <span class="val copyable mono" id="parselLonVal">—</span>
+          <button type="button" class="btn" id="btnParselCopyLon">Kopyala</button>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn accent" id="btnParselOpen">TKGM Parsel Sorgu aç</button>
+      </div>
     </div>
   </div>
 
