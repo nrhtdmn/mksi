@@ -2098,15 +2098,6 @@ function bindUi() {
     }
     ev.target.value = "";
   });
-  $("#btnImportPaste").addEventListener("click", async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      if (!text?.trim()) return toast("Pano boş");
-      await applyImportText(text);
-    } catch (_) {
-      toast("Panodan okunamadı — metni kopyalayıp tekrar deneyin");
-    }
-  });
 
   $("#btnClearAll").addEventListener("click", async () => {
     if (!confirm("Tüm noktalar, şekiller ve çizimler silinsin mi?")) return;
