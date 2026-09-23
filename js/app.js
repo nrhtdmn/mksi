@@ -16,6 +16,17 @@ import {
   shareOrDownload,
 } from "./storage.js";
 import { getSlopeNear, getWeather } from "./weather.js";
+import {
+  fetchIller,
+  fetchIlceler,
+  fetchMahalleler,
+  fetchParselByCoord,
+  fetchParselByAda,
+  ringToLatLngs,
+  featureCenter,
+  summarizeParsel,
+  TKGM_SITE,
+} from "./parsel.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -184,6 +195,10 @@ function setTool(name) {
   } else if (name === "savept") {
     syncSavePtUi();
     openSheet("#sheetSavePt");
+  } else if (name === "parsel") {
+    openSheet("#sheetParsel");
+    syncParselModeUi();
+    ensureIllerLoaded();
   } else if (name === "area") {
     areaPts = [];
     clearTemp();
@@ -405,6 +420,12 @@ function onMapClick(e) {
     pickMode = null;
     setModeBanner("");
     closeSheets();
+    return;
+  }
+  if (pickMode === "parsel") {
+    pickMode = null;
+    setModeBanner("");
+    queryParselAt(lat, lon);
     return;
   }
   if (pickMode === "measure1") {
@@ -854,6 +875,17 @@ function addShapeToLayer(sh, layer) {
       { color: "#4a9fd4", weight: 2, fillOpacity: 0.15 }
     ).addTo(layer);
     labelAreaShape(layer, sh.pts, sh.area, name);
+  } else if (sh.type === "parsel" && sh.pts?.length) {
+    L.polygon(
+      sh.pts.map((p) => [p.lat, p.lon]),
+      { color: "#c45c26", weight: 2, fillColor: "#c45c26", fillOpacity: 0.2 }
+    ).addTo(layer);
+    const c = sh.center || centroid(sh.pts);
+    const label =
+      (name ? `<span class="name">${escapeHtml(name)}</span>` : "") +
+      `<span class="hl">${escapeHtml(sh.ozet || "")}</span>` +
+      (sh.alan ? `<br/>${escapeHtml(String(sh.alan))} m²` : "");
+    addMapLabel(layer, c.lat, c.lon, label, true);
   }
 }
 
@@ -1073,6 +1105,154 @@ function syncSavePtUi() {
   $("#savePtLlWrap").classList.toggle("hidden", fmt !== "ll");
 }
 
+function syncParselModeUi() {
+  $("#parselAdaFields").classList.toggle("hidden", $("#parselMode").value !== "ada");
+}
+
+let illerLoaded = false;
+
+async function ensureIllerLoaded() {
+  if (illerLoaded) return;
+  const sel = $("#parselIl");
+  try {
+    sel.innerHTML = `<option value="">Yükleniyor…</option>`;
+    const list = await fetchIller();
+    sel.innerHTML =
+      `<option value="">İl seçin</option>` +
+      list.map((x) => `<option value="${x.id}">${escapeHtml(x.text)}</option>`).join("");
+    illerLoaded = true;
+  } catch (e) {
+    sel.innerHTML = `<option value="">İller alınamadı</option>`;
+    toast("İl listesi alınamadı (internet?)");
+  }
+}
+
+async function onParselIlChange() {
+  const ilId = $("#parselIl").value;
+  $("#parselMahalle").innerHTML = `<option value="">Önce ilçe seçin</option>`;
+  const sel = $("#parselIlce");
+  if (!ilId) {
+    sel.innerHTML = `<option value="">Önce il seçin</option>`;
+    return;
+  }
+  sel.innerHTML = `<option value="">Yükleniyor…</option>`;
+  try {
+    const list = await fetchIlceler(ilId);
+    sel.innerHTML =
+      `<option value="">İlçe seçin</option>` +
+      list.map((x) => `<option value="${x.id}">${escapeHtml(x.text)}</option>`).join("");
+  } catch (_) {
+    sel.innerHTML = `<option value="">İlçeler alınamadı</option>`;
+  }
+}
+
+async function onParselIlceChange() {
+  const ilceId = $("#parselIlce").value;
+  const sel = $("#parselMahalle");
+  if (!ilceId) {
+    sel.innerHTML = `<option value="">Önce ilçe seçin</option>`;
+    return;
+  }
+  sel.innerHTML = `<option value="">Yükleniyor…</option>`;
+  try {
+    const list = await fetchMahalleler(ilceId);
+    sel.innerHTML =
+      `<option value="">Mahalle seçin</option>` +
+      list.map((x) => `<option value="${x.id}">${escapeHtml(x.text)}</option>`).join("");
+  } catch (_) {
+    sel.innerHTML = `<option value="">Mahalleler alınamadı</option>`;
+  }
+}
+
+async function queryParselAt(lat, lon) {
+  if (!navigator.onLine) return toast("Parsel için internet gerekli");
+  toast("Parsel sorgulanıyor…");
+  try {
+    const feat = await fetchParselByCoord(lat, lon);
+    if (!feat?.geometry) {
+      $("#parselResult").innerHTML = "Bu noktada parsel bulunamadı.";
+      openSheet("#sheetParsel");
+      return toast("Parsel yok");
+    }
+    showParselFeature(feat);
+  } catch (e) {
+    toast("Sorgu hatası: " + (e.message || e));
+    openSheet("#sheetParsel");
+  }
+}
+
+async function queryParselByAdaForm() {
+  const mahalleId = $("#parselMahalle").value;
+  const ada = $("#parselAda").value.trim();
+  const no = $("#parselNo").value.trim();
+  if (!mahalleId || !ada || !no) return toast("Mahalle, ada ve parsel gerekli");
+  if (!navigator.onLine) return toast("Parsel için internet gerekli");
+  toast("Parsel sorgulanıyor…");
+  try {
+    const feat = await fetchParselByAda(mahalleId, ada, no);
+    if (!feat?.geometry) {
+      $("#parselResult").innerHTML = "Parsel bulunamadı.";
+      return toast("Parsel yok");
+    }
+    showParselFeature(feat);
+  } catch (e) {
+    toast("Sorgu hatası: " + (e.message || e));
+  }
+}
+
+function showParselFeature(feature) {
+  const props = feature.properties || {};
+  const info = summarizeParsel(props);
+  const pts = ringToLatLngs(feature.geometry.coordinates);
+  if (pts.length < 3) return toast("Geometri geçersiz");
+  const center = featureCenter(feature) || centroid(pts);
+  const name = $("#parselName").value.trim() || info.title;
+
+  clearTemp();
+  L.polygon(
+    pts.map((p) => [p.lat, p.lon]),
+    { color: "#c45c26", weight: 2, fillColor: "#c45c26", fillOpacity: 0.25 }
+  ).addTo(tempLayer);
+  L.circleMarker([center.lat, center.lon], {
+    radius: 5,
+    color: "#fff",
+    fillColor: "#c45c26",
+    fillOpacity: 1,
+  }).addTo(tempLayer);
+  addMapLabel(
+    tempLayer,
+    center.lat,
+    center.lon,
+    `<span class="name">${escapeHtml(name)}</span><span class="hl">${escapeHtml(info.title)}</span><br/>${escapeHtml(String(info.alan))} m²`,
+    true
+  );
+
+  map.fitBounds(
+    L.latLngBounds(pts.map((p) => [p.lat, p.lon])),
+    { padding: [40, 40], maxZoom: 18 }
+  );
+
+  pendingShape = {
+    type: "parsel",
+    name,
+    pts,
+    center,
+    ozet: info.title,
+    ada: info.ada,
+    parsel: info.parsel,
+    alan: info.alan,
+    nitelik: info.nitelik,
+    mahalle: info.mahalle,
+    il: info.il,
+    ilce: info.ilce,
+    summary: `${info.title} · ${info.alan} m²`,
+  };
+
+  $("#parselResult").innerHTML = info.html + `<br/><span style="color:#8a9bb0">Kaynak: TKGM MEGSIS</span>`;
+  showResult("Parsel", info.html, name);
+  toast(info.title);
+}
+
 function defaultLabel(sh) {
   if (sh.type === "circle") return "Daire";
   if (sh.type === "arc") return "Kavis";
@@ -1080,6 +1260,7 @@ function defaultLabel(sh) {
   if (sh.type === "bearing") return "İstikamet";
   if (sh.type === "measure") return "Mesafe";
   if (sh.type === "draw") return "Çizim";
+  if (sh.type === "parsel") return sh.ozet || "Parsel";
   return "Şekil";
 }
 
@@ -1207,6 +1388,33 @@ function bindUi() {
     $("#arcResult").innerHTML = "";
   });
 
+  $("#parselMode").addEventListener("change", syncParselModeUi);
+  $("#parselIl").addEventListener("change", onParselIlChange);
+  $("#parselIlce").addEventListener("change", onParselIlceChange);
+  $("#btnParselOfficial").addEventListener("click", () => {
+    window.open(TKGM_SITE, "_blank", "noopener");
+  });
+  $("#btnParselClear").addEventListener("click", () => {
+    clearTemp();
+    $("#parselResult").innerHTML = "";
+  });
+  $("#btnParselGo").addEventListener("click", () => {
+    const mode = $("#parselMode").value;
+    if (mode === "gps") {
+      if (!lastGps) return toast("Konum yok");
+      closeSheets();
+      queryParselAt(lastGps.lat, lastGps.lon);
+    } else if (mode === "ada") {
+      queryParselByAdaForm();
+    } else {
+      pickMode = "parsel";
+      closeSheets();
+      setModeBanner("Parsel için haritaya dokun");
+      activeTool = "parsel";
+      highlightTool("parsel");
+    }
+  });
+
   $("#btnSavePtGo").addEventListener("click", () => {
     const src = $("#savePtSrc").value;
     const name = $("#savePtName").value.trim() || "Nokta";
@@ -1260,7 +1468,8 @@ function bindUi() {
     if (sh.type === "circle") sh.summary = `r=${sh.radius}m · ${fmtArea(sh.area)}`;
     else if (sh.type === "arc") sh.summary = `${sh.mainMil} · ${sh.dist}m`;
     else if (sh.type === "area") sh.summary = fmtArea(sh.area);
-    else sh.summary = `${fmtDist(sh.dist)} · ${sh.mil} milyem`;
+    else if (sh.type === "parsel") sh.summary = sh.summary || sh.ozet || "Parsel";
+    else if (sh.dist != null) sh.summary = `${fmtDist(sh.dist)} · ${sh.mil} milyem`;
     state.shapes.push(sh);
     persist();
     renderSaved();

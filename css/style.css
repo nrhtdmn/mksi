@@ -183,7 +183,7 @@ html, body {
 /* Compact 3-column toolbar for phones */
 .toolbar {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 4px;
   padding: 6px 6px calc(6px + var(--safe-bottom));
   background: var(--panel);
@@ -210,7 +210,7 @@ html, body {
 .locate-fab {
   position: absolute;
   right: 12px;
-  bottom: calc(170px + var(--safe-bottom));
+  bottom: calc(200px + var(--safe-bottom));
   z-index: 900;
   width: 48px;
   height: 48px;
@@ -227,7 +227,7 @@ html, body {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  bottom: calc(168px + var(--safe-bottom));
+  bottom: calc(198px + var(--safe-bottom));
   z-index: 950;
   display: flex;
   gap: 6px;
@@ -452,7 +452,7 @@ html, body {
 
 @media (min-width: 560px) {
   .toolbar {
-    grid-template-columns: repeat(9, 1fr);
+    grid-template-columns: repeat(5, 1fr);
   }
   .info-strip {
     grid-template-columns: repeat(4, 1fr);

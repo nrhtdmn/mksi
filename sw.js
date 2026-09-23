@@ -1,6 +1,6 @@
 /* MKSI service worker — app shell + runtime tile cache. No push. */
-const CACHE_APP = "mksi-app-v3";
-const CACHE_TILES = "mksi-tiles-v3";
+const CACHE_APP = "mksi-app-v4";
+const CACHE_TILES = "mksi-tiles-v4";
 
 const APP_ASSETS = [
   "./",
@@ -10,6 +10,7 @@ const APP_ASSETS = [
   "./js/geo.js",
   "./js/storage.js",
   "./js/weather.js",
+  "./js/parsel.js",
   "./manifest.json",
   "./icons/icon.svg",
   "./icons/icon-192.png",

@@ -55,11 +55,64 @@
       <button type="button" class="btn" data-tool="finishArea"><span class="ico">✓</span><span class="txt">Bitir</span></button>
       <button type="button" class="btn" data-tool="draw"><span class="ico">✎</span><span class="txt">Kalem</span></button>
       <button type="button" class="btn" data-tool="savept"><span class="ico">📍</span><span class="txt">Nokta</span></button>
+      <button type="button" class="btn" data-tool="parsel"><span class="ico">▣</span><span class="txt">Parsel</span></button>
       <button type="button" class="btn" data-tool="weather"><span class="ico">☁</span><span class="txt">Hava</span></button>
     </nav>
   </div>
 
   <div class="sheet-backdrop" id="backdrop"></div>
+
+  <div class="sheet" id="sheetParsel">
+    <div class="sheet-head">
+      <h2>Parsel sorgu</h2>
+      <button type="button" class="btn icon close-sheet">✕</button>
+    </div>
+    <div class="sheet-body">
+      <p class="hint">Kaynak: TKGM MEGSIS. Malik / tapu sahibi gösterilmez. Veriler resmi sistemden alınır.</p>
+      <div class="field">
+        <label>Yöntem</label>
+        <select id="parselMode">
+          <option value="map">Haritada noktaya dokun</option>
+          <option value="gps">Konumumdaki parsel</option>
+          <option value="ada">Ada / parsel gir</option>
+        </select>
+      </div>
+      <div id="parselAdaFields" class="hidden">
+        <div class="field">
+          <label>İl</label>
+          <select id="parselIl"><option value="">Yükleniyor…</option></select>
+        </div>
+        <div class="field">
+          <label>İlçe</label>
+          <select id="parselIlce"><option value="">Önce il seçin</option></select>
+        </div>
+        <div class="field">
+          <label>Mahalle / köy</label>
+          <select id="parselMahalle"><option value="">Önce ilçe seçin</option></select>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Ada</label>
+            <input type="text" id="parselAda" placeholder="örn. 80146" />
+          </div>
+          <div class="field">
+            <label>Parsel</label>
+            <input type="text" id="parselNo" placeholder="örn. 9" />
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label>İsim (kayıt için)</label>
+        <input type="text" id="parselName" placeholder="Boşsa ada/parsel kullanılır" maxlength="64" />
+      </div>
+      <div class="actions">
+        <button type="button" class="btn accent" id="btnParselGo">Sorgula</button>
+        <button type="button" class="btn" id="btnParselOfficial">Resmi TKGM sitesi</button>
+        <button type="button" class="btn" id="btnParselClear">Temizle</button>
+      </div>
+      <div class="result-box" id="parselResult"></div>
+    </div>
+  </div>
 
   <div class="sheet" id="sheetMeasure">
     <div class="sheet-head">
