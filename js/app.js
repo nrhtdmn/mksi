@@ -2089,16 +2089,18 @@ function bindUi() {
     const stamp = dateStamp();
     const filename = exportFileName("MKSI", stamp);
     const r = await shareOrDownload(filename, exportJson(state, "all"), "MKSI");
-    if (r === "shared-file") toast(`Dosya paylaşıldı: ${filename}`);
+    if (r === "download+shared" || r === "shared-file") toast(`İndirildi + paylaşım: ${filename}`);
     else if (r === "download") toast(`Dosya indirildi: ${filename}`);
+    else if (r === "shared") toast("Paylaşım açıldı");
     else if (r !== "abort") toast("Dosya dışa aktarılamadı");
   });
   $("#btnExportPts").addEventListener("click", async () => {
     const stamp = dateStamp();
     const filename = exportFileName("Noktalar", stamp);
     const r = await shareOrDownload(filename, exportJson(state, "points"), "Noktalar");
-    if (r === "shared-file") toast(`Dosya paylaşıldı: ${filename}`);
+    if (r === "download+shared" || r === "shared-file") toast(`İndirildi + paylaşım: ${filename}`);
     else if (r === "download") toast(`Dosya indirildi: ${filename}`);
+    else if (r === "shared") toast("Paylaşım açıldı");
     else if (r !== "abort") toast("Dosya dışa aktarılamadı");
   });
   async function applyImportText(text) {
