@@ -1391,15 +1391,40 @@ function showParselRedirect(lat, lon) {
   setModeBanner("");
 }
 
-async function openTkgmParselSite() {
+function showParselRedirect(lat, lon) {
+  const la = Number(lat).toFixed(6);
+  const lo = Number(lon).toFixed(6);
+  const latEl = $("#parselLatVal");
+  const lonEl = $("#parselLonVal");
+  latEl.textContent = la;
+  lonEl.textContent = lo;
+  latEl.dataset.v = la;
+  lonEl.dataset.v = lo;
+  openSheet("#sheetParselGo");
+  activeTool = null;
+  clearToolHighlight();
+  setModeBanner("");
+  // Enlemi panoya alıp TKGM'yi tarayıcıda aç
+  openTkgmParselSite({ auto: true });
+}
+
+async function openTkgmParselSite(opts = {}) {
   const la = $("#parselLatVal").dataset.v;
   if (la) {
     try {
       if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(la);
     } catch (_) {}
   }
-  window.open(TKGM_PARSEL_URL, "_blank", "noopener");
-  toast("Enlem panoda → Coğrafi sekmesi → yapıştır; sonra boylamı kopyalayın");
+  // <a target=_blank> — window.open yerine; PWA/mobilde tarayıcıda açılır
+  const btn = $("#btnParselOpen");
+  if (btn && !opts.fromClick) {
+    btn.click();
+  }
+  if (!opts.auto) {
+    toast("Enlem panoda → Coğrafi sekmesi → yapıştır; sonra boylamı kopyalayın");
+  } else {
+    toast("TKGM tarayıcıda açıldı — enlem panoda");
+  }
 }
 
 function fmtDateTime(d = new Date()) {
@@ -1610,7 +1635,10 @@ function bindUi() {
   $("#btnParselCopyLon").addEventListener("click", () =>
     copyText($("#parselLonVal").dataset.v || $("#parselLonVal").textContent)
   );
-  $("#btnParselOpen").addEventListener("click", openTkgmParselSite);
+  $("#btnParselOpen").addEventListener("click", () => {
+    copyParselLatQuiet();
+    toast("Enlem panoda → Coğrafi sekmesi → yapıştır");
+  });
 
   $("#btnCircleDraw").addEventListener("click", () => {
     const mode = $("#circleCenter").value;
