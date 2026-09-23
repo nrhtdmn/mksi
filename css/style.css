@@ -219,7 +219,7 @@ html, body {
   position: absolute;
   right: 12px;
   bottom: calc(200px + var(--safe-bottom));
-  z-index: 900;
+  z-index: 1200;
   width: 48px;
   height: 48px;
   border-radius: 50%;
@@ -233,38 +233,48 @@ html, body {
 
 .chrome-fab {
   position: absolute;
-  right: 68px;
-  bottom: calc(200px + var(--safe-bottom));
-  z-index: 900;
+  right: 12px;
+  bottom: calc(16px + var(--safe-bottom));
+  z-index: 1200;
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
   font-size: 18px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
   cursor: pointer;
+}
+.chrome-fab[hidden] {
+  display: none !important;
+}
+
+.top-chrome-btn {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 #app.chrome-hidden .info-strip,
 #app.chrome-hidden .toolbar {
   display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
 }
 #app.chrome-hidden {
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto 1fr !important;
 }
-#app.chrome-hidden .locate-fab,
-#app.chrome-hidden .chrome-fab {
-  bottom: calc(16px + var(--safe-bottom));
+#app.chrome-hidden .locate-fab {
+  bottom: calc(72px + var(--safe-bottom));
 }
 #app.chrome-hidden .draw-bar {
   bottom: calc(72px + var(--safe-bottom));
-}
-#app.chrome-hidden .chrome-fab {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
 }
 
 .draw-bar {

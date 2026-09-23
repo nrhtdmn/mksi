@@ -24,6 +24,7 @@
         <button type="button" data-layer="street">Harita</button>
         <button type="button" data-layer="hybrid" class="active">Hibrit</button>
       </div>
+      <button type="button" class="btn top-chrome-btn" id="btnChromeToggle" title="Alt menüyü gizle/göster" aria-label="Alt menü">Gizle</button>
       <button type="button" class="btn icon" id="btnMenu" title="Menü" aria-label="Menü">☰</button>
     </header>
 
@@ -38,7 +39,7 @@
     </div>
     <div class="mode-banner" id="modeBanner"></div>
     <button type="button" class="locate-fab" id="btnLocate" title="Konumu ortala" aria-label="Konum">⌖</button>
-    <button type="button" class="chrome-fab" id="btnChromeToggle" title="Alt menüyü gizle/göster" aria-label="Alt menü">▼</button>
+    <button type="button" class="chrome-fab" id="btnChromeFab" title="Alt menüyü göster" aria-label="Menüyü göster" hidden>▲</button>
 
     <div class="draw-bar" id="drawBar" hidden>
       <button type="button" class="btn" id="btnDrawUndo">Geri</button>
@@ -73,7 +74,6 @@
       <button type="button" class="btn" data-tool="draw"><span class="ico">✎</span><span class="txt">Kalem</span></button>
       <button type="button" class="btn" data-tool="savept"><span class="ico">📍</span><span class="txt">Nokta</span></button>
       <button type="button" class="btn" data-tool="parsel"><span class="ico">▤</span><span class="txt">Parsel</span></button>
-      <button type="button" class="btn" data-tool="weather"><span class="ico">☁</span><span class="txt">Hava</span></button>
     </nav>
   </div>
 
@@ -246,7 +246,7 @@
       <button type="button" class="btn icon close-sheet">✕</button>
     </div>
     <div class="sheet-body">
-      <p class="hint">Açılan sitede <strong>Coğrafi</strong> sekmesine geçin → Enlem / Boylam yapıştırın → Sorgula.</p>
+      <p class="hint">Açılan sitede <strong>Coğrafi</strong> sekmesine geçin → Enlem / Boylam yapıştırın → Sorgula. Bağlantı sistem tarayıcısında (Chrome / Safari) açılır.</p>
       <div class="field">
         <label>Enlem (latitude-input)</label>
         <div class="copy-row">
@@ -262,7 +262,8 @@
         </div>
       </div>
       <div class="actions">
-        <a class="btn accent" id="btnParselOpen" href="https://parselsorgu.tkgm.gov.tr/" target="_blank" rel="noopener noreferrer">TKGM Parsel Sorgu aç</a>
+        <button type="button" class="btn accent" id="btnParselOpen">Sistem tarayıcısında aç</button>
+        <button type="button" class="btn" id="btnParselShare">Bağlantıyı paylaş</button>
       </div>
     </div>
   </div>
@@ -377,6 +378,7 @@
         <button type="button" class="btn" id="btnQuickArea">Alan köşesi</button>
         <button type="button" class="btn" id="btnQuickPoint">Nokta kaydet</button>
         <button type="button" class="btn" id="btnQuickParsel">Parsel</button>
+        <button type="button" class="btn" id="btnQuickWeather">Hava</button>
       </div>
     </div>
   </div>

@@ -1540,20 +1540,26 @@ function onCenterAction() {
 
 function applyChromeHidden(hidden) {
   const app = $("#app");
-  const btn = $("#btnChromeToggle");
-  app.classList.toggle("chrome-hidden", !!hidden);
-  if (btn) {
-    btn.textContent = hidden ? "▲" : "▼";
-    btn.title = hidden ? "Alt menüyü göster" : "Alt menüyü gizle";
+  const topBtn = $("#btnChromeToggle");
+  const fab = $("#btnChromeFab");
+  const on = !!hidden;
+  app.classList.toggle("chrome-hidden", on);
+  if (topBtn) {
+    topBtn.textContent = on ? "Göster" : "Gizle";
+    topBtn.title = on ? "Alt menüyü göster" : "Alt menüyü gizle";
   }
-  state.settings.chromeHidden = !!hidden;
-  setTimeout(() => map?.invalidateSize(), 50);
+  if (fab) {
+    fab.hidden = !on;
+  }
+  state.settings.chromeHidden = on;
+  setTimeout(() => map?.invalidateSize(), 80);
 }
 
 function toggleChrome() {
-  applyChromeHidden(!$("#app").classList.contains("chrome-hidden"));
+  const next = !$("#app").classList.contains("chrome-hidden");
+  applyChromeHidden(next);
   persist();
-  toast($("#app").classList.contains("chrome-hidden") ? "Alt menü gizli" : "Alt menü açık");
+  toast(next ? "Alt menü gizlendi" : "Alt menü gösterildi");
 }
 
 function syncCircleCenterUi() {
@@ -1589,7 +1595,8 @@ function showParselRedirect(lat, lon) {
   activeTool = null;
   clearToolHighlight();
   setModeBanner("");
-  openTkgmInBrowser(la);
+  // Otomatik açma yok — kullanıcı düğmesine bassın (sistem tarayıcısı için jest gerekir)
+  toast("Enlem/boylam hazır — Sistem tarayıcısında aç");
 }
 
 async function copyParselLatQuiet() {
@@ -1600,22 +1607,39 @@ async function copyParselLatQuiet() {
   } catch (_) {}
 }
 
-/** Sistem tarayıcısında aç (PWA / Custom Tab dışında) */
+/** Sistem tarayıcısında aç (PWA / gömülü sekme dışında) */
 function openInSystemBrowser(url) {
-  const u = url;
+  const u = String(url || "").trim();
+  if (!u) return;
   const ua = navigator.userAgent || "";
+
   if (/Android/i.test(ua)) {
-    const without = u.replace(/^https?:\/\//i, "");
-    window.location.href = `intent://${without}#Intent;scheme=https;action=android.intent.action.VIEW;end`;
+    // Tam tarayıcıya çık: intent (Custom Tab / gömülü görünümü atlar)
+    const hostPath = u.replace(/^https?:\/\//i, "");
+    const intent =
+      `intent://${hostPath}` +
+      `#Intent;scheme=https;action=android.intent.action.VIEW;` +
+      `category=android.intent.category.BROWSABLE;` +
+      `S.browser_fallback_url=${encodeURIComponent(u)};end`;
+    window.location.href = intent;
     return;
   }
-  const a = document.createElement("a");
-  a.href = u;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+
+  if (/iPhone|iPad|iPod/i.test(ua)) {
+    // Kullanıcı jesti + _blank → Safari (standalone PWA'da gömülü açılmaz)
+    const a = document.createElement("a");
+    a.href = u;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return;
+  }
+
+  const w = window.open(u, "_blank", "noopener,noreferrer");
+  if (!w) window.location.href = u;
 }
 
 /** TKGM sitesini sistem tarayıcısında aç */
@@ -1627,7 +1651,28 @@ function openTkgmInBrowser(latForClipboard) {
     } catch (_) {}
   }
   openInSystemBrowser(TKGM_PARSEL_URL);
-  toast("TKGM tarayıcıda açıldı — enlem panoda");
+  toast("Sistem tarayıcısı açılıyor — enlem panoda");
+}
+
+async function shareTkgmLink() {
+  const la = $("#parselLatVal")?.dataset?.v;
+  const lo = $("#parselLonVal")?.dataset?.v;
+  let text = TKGM_PARSEL_URL;
+  if (la && lo) text = `TKGM Parsel Sorgu\nEnlem: ${la}\nBoylam: ${lo}\n${TKGM_PARSEL_URL}`;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: "TKGM Parsel Sorgu", text, url: TKGM_PARSEL_URL });
+      return;
+    }
+  } catch (e) {
+    if (e?.name === "AbortError") return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Bağlantı panoya kopyalandı — tarayıcıda açın");
+  } catch (_) {
+    toast("Paylaşılamadı");
+  }
 }
 
 function fmtDateTime(d = new Date()) {
@@ -1742,6 +1787,7 @@ function mergeById(a, b) {
 function bindUi() {
   $("#btnLocate").addEventListener("click", goToLocation);
   $("#btnChromeToggle").addEventListener("click", toggleChrome);
+  $("#btnChromeFab")?.addEventListener("click", toggleChrome);
   $("#btnCenterAction")?.addEventListener("click", onCenterAction);
   $("#btnMenu").addEventListener("click", () => {
     renderLists();
@@ -1840,6 +1886,10 @@ function bindUi() {
     const { lat, lon } = quickPoint;
     showParselRedirect(lat, lon);
   });
+  $("#btnQuickWeather")?.addEventListener("click", () => {
+    closeSheets();
+    refreshWeather();
+  });
 
   $("#measureMode").addEventListener("change", () => {
     $("#measureSavedFields").classList.toggle("hidden", $("#measureMode").value !== "saved");
@@ -1908,9 +1958,11 @@ function bindUi() {
   $("#btnParselCopyLon").addEventListener("click", () =>
     copyText($("#parselLonVal").dataset.v || $("#parselLonVal").textContent)
   );
-  $("#btnParselOpen").addEventListener("click", (e) => {
-    e.preventDefault();
+  $("#btnParselOpen").addEventListener("click", () => {
     openTkgmInBrowser();
+  });
+  $("#btnParselShare")?.addEventListener("click", () => {
+    shareTkgmLink();
   });
 
   $("#btnCircleDraw").addEventListener("click", () => {
