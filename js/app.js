@@ -2080,23 +2080,50 @@ function bindUi() {
   $("#btnDrawClear").addEventListener("click", clearDrawStrokes);
   $("#btnDrawSave").addEventListener("click", saveDrawStrokes);
 
-  $("#btnExportAll").addEventListener("click", async () => {
+  async function toastShareResult(r, filename) {
+    if (r === "download+shared" || r === "shared-file") toast(`İndirildi + paylaşım: ${filename}`);
+    else if (r === "download") toast(`Dosya indirildi: ${filename}`);
+    else if (r === "shared") toast("Paylaşım açıldı");
+    else if (r !== "abort") toast("Paylaşılamadı");
+  }
+
+  $("#btnShareAll").addEventListener("click", async () => {
     const stamp = dateStamp();
     const filename = exportFileName("MKSI", stamp);
-    const r = await shareOrDownload(filename, exportJson(state, "all"), "MKSI");
-    if (r === "download+shared" || r === "shared-file") toast(`İndirildi + paylaşım: ${filename}`);
-    else if (r === "download") toast(`Dosya indirildi: ${filename}`);
-    else if (r === "shared") toast("Paylaşım açıldı");
-    else if (r !== "abort") toast("Dosya dışa aktarılamadı");
+    const r = await shareOrDownload(filename, exportJson(state, "all"), "MKSI — Tümü");
+    await toastShareResult(r, filename);
   });
-  $("#btnExportPts").addEventListener("click", async () => {
+  $("#btnSharePts").addEventListener("click", async () => {
+    if (!state.points.length) return toast("Paylaşılacak nokta yok");
     const stamp = dateStamp();
     const filename = exportFileName("Noktalar", stamp);
-    const r = await shareOrDownload(filename, exportJson(state, "points"), "Noktalar");
-    if (r === "download+shared" || r === "shared-file") toast(`İndirildi + paylaşım: ${filename}`);
-    else if (r === "download") toast(`Dosya indirildi: ${filename}`);
-    else if (r === "shared") toast("Paylaşım açıldı");
-    else if (r !== "abort") toast("Dosya dışa aktarılamadı");
+    const r = await shareOrDownload(filename, exportJson(state, "points"), "MKSI — Noktalar");
+    await toastShareResult(r, filename);
+  });
+  $("#btnShareShapes").addEventListener("click", async () => {
+    if (!state.shapes.length && !state.drawings.length) return toast("Paylaşılacak şekil yok");
+    const stamp = dateStamp();
+    const filename = exportFileName("Sekiller", stamp);
+    const r = await shareOrDownload(filename, exportJson(state, "shapes"), "MKSI — Şekiller");
+    await toastShareResult(r, filename);
+  });
+  $("#btnResultShare")?.addEventListener("click", async () => {
+    if (!pendingShape) return toast("Paylaşılacak sonuç yok");
+    const name =
+      ($("#resultName").value.trim() || pendingShape.name || defaultLabel(pendingShape)).trim() ||
+      "Şekil";
+    const sh = { ...pendingShape, name };
+    if (sh.type === "area") sh.color = $("#resultColor")?.value || sh.color || "#4a9fd4";
+    const stamp = dateStamp();
+    const filename = exportFileName(name, stamp);
+    const payload = {
+      app: "MKSI",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      shapes: [sh],
+    };
+    const r = await shareOrDownload(filename, JSON.stringify(payload, null, 2), `MKSI — ${name}`);
+    await toastShareResult(r, filename);
   });
   async function applyImportText(text) {
     const data = parseImport(text);
