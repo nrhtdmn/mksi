@@ -469,13 +469,15 @@ html, body {
 }
 .map-label .hl { color: #e8b84a; }
 .map-label .name {
-  color: #7eb8a0;
+  color: #e8b84a;
   display: block;
-  margin-bottom: 2px;
+  margin-bottom: 3px;
+  font-size: 12px;
+  font-weight: 700;
 }
 .map-label.multi {
   white-space: normal;
-  max-width: 150px;
+  max-width: 180px;
   text-align: center;
 }
 .leaflet-div-icon.map-label-icon {

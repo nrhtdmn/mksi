@@ -278,27 +278,30 @@ function centroid(pts) {
 
 function labelLine(layer, a, b, dist, mil, name) {
   const m = mid(a, b);
-  const nameHtml = name ? `<span class="name">${escapeHtml(name)}</span>` : "";
+  const nameHtml = name
+    ? `<span class="name">${escapeHtml(name)}</span>`
+    : "";
   addMapLabel(
     layer,
     m.lat,
     m.lon,
-    `${nameHtml}<span class="hl">${fmtDist(dist)}</span><br/>${mil} milyem`,
+    `${nameHtml}Mesafe: <span class="hl">${fmtDist(dist)}</span><br/>İstikamet: <span class="hl">${mil}</span> milyem`,
     true
   );
 }
 
 function labelCircleShape(layer, lat, lon, radius, name) {
   const edge = destination(lat, lon, 1600, radius);
-  const nameHtml = name ? `<span class="name">${escapeHtml(name)}</span>` : "";
+  const nameHtml = name
+    ? `<span class="name">${escapeHtml(name)}</span>`
+    : "";
   addMapLabel(
     layer,
     edge.lat,
     edge.lon,
-    `${nameHtml}r <span class="hl">${fmtDist(radius)}</span>`,
-    !!name
+    `${nameHtml}Yarıçap: <span class="hl">${fmtDist(radius)}</span><br/>Alan: <span class="hl">${fmtArea(circleArea(radius))}</span>`,
+    true
   );
-  addMapLabel(layer, lat, lon, `<span class="hl">${fmtArea(circleArea(radius))}</span>`);
 }
 
 function labelArcShape(layer, lat, lon, mainMil, dist, left, right, startMil, endMil, name) {
@@ -306,22 +309,44 @@ function labelArcShape(layer, lat, lon, mainMil, dist, left, right, startMil, en
   const leftPt = destination(lat, lon, startMil, dist);
   const rightPt = destination(lat, lon, endMil, dist);
   const midRay = mid({ lat, lon }, midPt);
-  const nameHtml = name ? `<span class="name">${escapeHtml(name)}</span>` : "";
+  const nameHtml = name
+    ? `<span class="name">${escapeHtml(name)}</span>`
+    : "";
   addMapLabel(
     layer,
     midRay.lat,
     midRay.lon,
-    `${nameHtml}<span class="hl">${mainMil}</span> milyem<br/>${fmtDist(dist)}`,
+    `${nameHtml}İstikamet: <span class="hl">${mainMil}</span> milyem<br/>Mesafe: <span class="hl">${fmtDist(dist)}</span>`,
     true
   );
-  addMapLabel(layer, leftPt.lat, leftPt.lon, `Sol <span class="hl">${left}</span>`);
-  addMapLabel(layer, rightPt.lat, rightPt.lon, `Sağ <span class="hl">${right}</span>`);
+  addMapLabel(
+    layer,
+    leftPt.lat,
+    leftPt.lon,
+    `Sol yan: <span class="hl">${left}</span>`,
+    false
+  );
+  addMapLabel(
+    layer,
+    rightPt.lat,
+    rightPt.lon,
+    `Sağ yan: <span class="hl">${right}</span>`,
+    false
+  );
 }
 
 function labelAreaShape(layer, pts, area, name) {
   const c = centroid(pts);
-  const nameHtml = name ? `<span class="name">${escapeHtml(name)}</span>` : "";
-  addMapLabel(layer, c.lat, c.lon, `${nameHtml}<span class="hl">${fmtArea(area)}</span>`, !!name);
+  const nameHtml = name
+    ? `<span class="name">${escapeHtml(name)}</span>`
+    : "";
+  addMapLabel(
+    layer,
+    c.lat,
+    c.lon,
+    `${nameHtml}Alan: <span class="hl">${fmtArea(area)}</span>`,
+    true
+  );
 }
 
 function showResult(title, html, suggestedName) {
