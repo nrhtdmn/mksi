@@ -1205,6 +1205,7 @@ function renderLists() {
         </div>
         <button type="button" class="btn icon" data-go-kind="point" data-go-i="${i}" title="Git">➤</button>
         <button type="button" class="btn icon" data-route-kind="point" data-route-i="${i}" title="Rota">🧭</button>
+        <button type="button" class="btn icon" data-export-kind="point" data-export-i="${i}" title="Dışa aktar">⬇</button>
         <button type="button" class="btn icon danger" data-del-pt="${escapeHtml(p.id)}">🗑</button>
       </li>`
           )
@@ -1246,6 +1247,7 @@ function renderLists() {
         </div>
         <button type="button" class="btn icon" data-go-kind="${x.kind}" data-go-i="${x.i}" title="Git">➤</button>
         <button type="button" class="btn icon" data-route-kind="${x.kind}" data-route-i="${x.i}" title="Rota">🧭</button>
+        <button type="button" class="btn icon" data-export-kind="${x.kind}" data-export-i="${x.i}" title="Dışa aktar">⬇</button>
         ${x.editable ? `<button type="button" class="btn icon" data-edit-shape="${x.i}" title="Düzenle">✎</button>` : ""}
         <button type="button" class="btn icon danger" data-del-kind="${x.kind}" data-del-i="${x.i}">🗑</button>
       </li>`
@@ -1724,6 +1726,33 @@ function openRouteTo(lat, lon, _name) {
   );
 }
 
+async function exportItem(kind, index) {
+  let name = "MKSI";
+  let payload;
+  if (kind === "point") {
+    const p = state.points[index];
+    if (!p) return toast("Nokta yok");
+    payload = { app: "MKSI", version: 1, exportedAt: new Date().toISOString(), points: [p] };
+    name = p.name || "Nokta";
+  } else if (kind === "shape") {
+    const s = state.shapes[index];
+    if (!s) return toast("Şekil yok");
+    payload = { app: "MKSI", version: 1, exportedAt: new Date().toISOString(), shapes: [s] };
+    name = s.name || s.type || "Şekil";
+  } else if (kind === "draw") {
+    const d = state.drawings[index];
+    if (!d) return toast("Çizim yok");
+    payload = { app: "MKSI", version: 1, exportedAt: new Date().toISOString(), drawings: [d] };
+    name = d.name || "Çizim";
+  } else {
+    return;
+  }
+  const filename = exportFileName(name, dateStamp());
+  const r = await downloadJson(filename, JSON.stringify(payload, null, 2));
+  if (r === "download") toast(`Dosya indirildi: ${filename}`);
+  else toast("Dosya indirilemedi");
+}
+
 function dateStamp() {
   const d = new Date();
   const dd = String(d.getDate()).padStart(2, "0");
@@ -2113,6 +2142,7 @@ function bindUi() {
   $("#pointsList").addEventListener("click", (e) => {
     const del = e.target.closest("[data-del-pt]");
     const route = e.target.closest("[data-route-kind]");
+    const exp = e.target.closest("[data-export-kind]");
     const go = e.target.closest("[data-go-kind]");
     if (del) {
       state.points = state.points.filter((x) => x.id !== del.dataset.delPt);
@@ -2126,6 +2156,10 @@ function bindUi() {
       openRouteTo(anchor.lat, anchor.lon, anchor.name);
       return;
     }
+    if (exp) {
+      exportItem(exp.dataset.exportKind, Number(exp.dataset.exportI));
+      return;
+    }
     if (go) {
       goToItem(go.dataset.goKind, Number(go.dataset.goI));
     }
@@ -2134,6 +2168,7 @@ function bindUi() {
   $("#shapesList").addEventListener("click", (e) => {
     const del = e.target.closest("[data-del-kind]");
     const route = e.target.closest("[data-route-kind]");
+    const exp = e.target.closest("[data-export-kind]");
     const go = e.target.closest("[data-go-kind]");
     const edit = e.target.closest("[data-edit-shape]");
     if (del) {
@@ -2152,6 +2187,10 @@ function bindUi() {
       const anchor = getItemAnchor(route.dataset.routeKind, Number(route.dataset.routeI));
       if (!anchor) return toast("Konum yok");
       openRouteTo(anchor.lat, anchor.lon, anchor.name);
+      return;
+    }
+    if (exp) {
+      exportItem(exp.dataset.exportKind, Number(exp.dataset.exportI));
       return;
     }
     if (go) {
