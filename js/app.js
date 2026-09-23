@@ -1389,42 +1389,34 @@ function showParselRedirect(lat, lon) {
   activeTool = null;
   clearToolHighlight();
   setModeBanner("");
+  openTkgmInBrowser(la);
 }
 
-function showParselRedirect(lat, lon) {
-  const la = Number(lat).toFixed(6);
-  const lo = Number(lon).toFixed(6);
-  const latEl = $("#parselLatVal");
-  const lonEl = $("#parselLonVal");
-  latEl.textContent = la;
-  lonEl.textContent = lo;
-  latEl.dataset.v = la;
-  lonEl.dataset.v = lo;
-  openSheet("#sheetParselGo");
-  activeTool = null;
-  clearToolHighlight();
-  setModeBanner("");
-  // Enlemi panoya alıp TKGM'yi tarayıcıda aç
-  openTkgmParselSite({ auto: true });
+async function copyParselLatQuiet() {
+  const la = $("#parselLatVal")?.dataset?.v;
+  if (!la) return;
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(la);
+  } catch (_) {}
 }
 
-async function openTkgmParselSite(opts = {}) {
-  const la = $("#parselLatVal").dataset.v;
+/** TKGM sitesini tarayıcıda aç (PWA'da window.open yerine <a target=_blank>) */
+function openTkgmInBrowser(latForClipboard) {
+  const la = latForClipboard || $("#parselLatVal")?.dataset?.v;
   if (la) {
     try {
-      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(la);
+      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(la);
     } catch (_) {}
   }
-  // <a target=_blank> — window.open yerine; PWA/mobilde tarayıcıda açılır
-  const btn = $("#btnParselOpen");
-  if (btn && !opts.fromClick) {
-    btn.click();
-  }
-  if (!opts.auto) {
-    toast("Enlem panoda → Coğrafi sekmesi → yapıştır; sonra boylamı kopyalayın");
-  } else {
-    toast("TKGM tarayıcıda açıldı — enlem panoda");
-  }
+  const a = document.createElement("a");
+  a.href = TKGM_PARSEL_URL;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  toast("TKGM tarayıcıda açıldı — enlem panoda");
 }
 
 function fmtDateTime(d = new Date()) {
