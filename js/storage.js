@@ -127,15 +127,11 @@ function safeFileName(filename) {
   return String(filename || "mksi.json").replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_");
 }
 
-function makeExportBlob(text) {
-  return new Blob([String(text)], { type: "application/json;charset=utf-8" });
-}
-
 /** Yalnızca dosya indir (dışa aktar) */
 export async function downloadJson(filename, text) {
   const safeName = safeFileName(filename);
   try {
-    const blob = makeExportBlob(text);
+    const blob = new Blob([String(text)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -148,46 +144,6 @@ export async function downloadJson(filename, text) {
   } catch (_) {
     return "fail";
   }
-}
-
-/** Yalnızca paylaşım paneli — WhatsApp / Bip ek (indirme yok) */
-export async function shareFile(filename, text, title = "MKSI") {
-  const body = String(text);
-  const safeName = safeFileName(filename);
-  const blob = makeExportBlob(body);
-
-  if (!navigator.share) {
-    // Paylaşım yoksa son çare indir
-    const r = await downloadJson(safeName, body);
-    return r === "download" ? "download-fallback" : "fail";
-  }
-
-  try {
-    let file = new File([blob], safeName, { type: "application/json" });
-    if (!navigator.canShare?.({ files: [file] })) {
-      const txtName = safeName.replace(/\.json$/i, ".txt");
-      file = new File([body], txtName, { type: "text/plain" });
-    }
-    if (navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ files: [file], title, text: title });
-      return "shared-file";
-    }
-    // Dosya eklenemiyorsa metin paylaşımı
-    await navigator.share({ title, text: `${title}\n\n${body}` });
-    return "shared";
-  } catch (e) {
-    if (e?.name === "AbortError") return "abort";
-    return "fail";
-  }
-}
-
-/** Eski birleşik API — geriye dönük: paylaşmayı dene, olmazsa indir */
-export async function shareOrDownload(filename, text, title = "MKSI") {
-  if (navigator.share) {
-    const r = await shareFile(filename, text, title);
-    if (r === "shared-file" || r === "shared" || r === "abort") return r;
-  }
-  return downloadJson(filename, text);
 }
 
 /** Dosya adı: şekil/çizim adı + tarih saat */

@@ -262,7 +262,6 @@
       </div>
       <div class="actions">
         <button type="button" class="btn accent" id="btnParselOpen">Sistem tarayıcısında aç</button>
-        <button type="button" class="btn" id="btnParselShare">Bağlantıyı paylaş</button>
       </div>
     </div>
   </div>
@@ -322,22 +321,33 @@
     </div>
     <div class="sheet-body">
       <div class="actions" style="margin-bottom:14px">
-        <button type="button" class="btn accent" id="btnShareAll">Tümünü paylaş</button>
-        <button type="button" class="btn" id="btnExportAll">Tümünü dışa aktar</button>
-        <button type="button" class="btn" id="btnSharePts">Noktaları paylaş</button>
-        <button type="button" class="btn" id="btnExportPts">Noktaları dışa aktar</button>
-        <button type="button" class="btn" id="btnShareShapes">Şekil / çizimleri paylaş</button>
-        <button type="button" class="btn" id="btnExportShapes">Şekil / çizimleri dışa aktar</button>
+        <button type="button" class="btn accent" id="btnExportAll">Tümünü dışa aktar</button>
         <button type="button" class="btn" id="btnImport">Dosyadan içe aktar</button>
         <button type="button" class="btn" id="btnImportPaste">Panodan içe aktar</button>
         <button type="button" class="btn danger" id="btnClearAll">Her şeyi sil</button>
       </div>
       <input type="file" id="importFile" accept="application/json,.json,.txt,text/plain" class="hidden" />
-      <p class="hint"><strong>Paylaş</strong> = WhatsApp / Bip paneli (ek). <strong>Dışa aktar</strong> = yalnızca dosya indir. Diğer cihazda dosya veya panodan içe aktarın.</p>
-      <h3 class="list-title">Kayıtlı noktalar</h3>
-      <ul class="list" id="pointsList"></ul>
-      <h3 class="list-title">Şekiller / çizimler</h3>
-      <ul class="list" id="shapesList"></ul>
+      <p class="hint">Dışa aktar dosyayı indirir. Diğer cihazda dosya veya panodan içe aktarın.</p>
+      <div class="field">
+        <label>Ara</label>
+        <input type="search" id="menuSearch" placeholder="İsim veya MGRS yazın…" autocomplete="off" />
+      </div>
+
+      <details class="menu-acc" id="accPoints" open>
+        <summary class="menu-acc-head">
+          <span class="menu-acc-title">Kayıtlı noktalar <span class="badge" id="pointsCount">0</span></span>
+          <button type="button" class="btn menu-export-btn" id="btnExportPts">Dışa aktar</button>
+        </summary>
+        <ul class="list" id="pointsList"></ul>
+      </details>
+
+      <details class="menu-acc" id="accShapes" open>
+        <summary class="menu-acc-head">
+          <span class="menu-acc-title">Şekiller / çizimler <span class="badge" id="shapesCount">0</span></span>
+          <button type="button" class="btn menu-export-btn" id="btnExportShapes">Dışa aktar</button>
+        </summary>
+        <ul class="list" id="shapesList"></ul>
+      </details>
     </div>
   </div>
 
@@ -361,7 +371,6 @@
       </div>
       <div class="actions">
         <button type="button" class="btn accent" id="btnResultSave">Kaydet</button>
-        <button type="button" class="btn" id="btnResultShare">Paylaş</button>
         <button type="button" class="btn danger" id="btnResultClear">Temizle</button>
       </div>
     </div>

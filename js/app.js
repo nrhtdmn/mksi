@@ -13,7 +13,6 @@ import {
   saveState,
   exportJson,
   parseImport,
-  shareFile,
   downloadJson,
   exportFileName,
 } from "./storage.js";
@@ -1177,23 +1176,40 @@ function addShapeToLayer(sh, layer) {
   }
 }
 
+function menuSearchQuery() {
+  return ($("#menuSearch")?.value || "").trim().toLocaleLowerCase("tr");
+}
+
+function matchesSearch(text, q) {
+  if (!q) return true;
+  return String(text || "").toLocaleLowerCase("tr").includes(q);
+}
+
 function renderLists() {
+  const q = menuSearchQuery();
   const pl = $("#pointsList");
+  const filteredPts = state.points
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => matchesSearch(`${p.name} ${p.mgrs || ""}`, q));
+  const pc = $("#pointsCount");
+  if (pc) pc.textContent = String(state.points.length);
+
   pl.innerHTML = state.points.length
-    ? state.points
-        .map(
-          (p, i) => `<li>
+    ? filteredPts.length
+      ? filteredPts
+          .map(
+            ({ p, i }) => `<li>
         <div class="meta" data-go-kind="point" data-go-i="${i}">
           <div class="name">${escapeHtml(p.name)}</div>
           <div class="sub">${escapeHtml(p.mgrs || "")}</div>
         </div>
         <button type="button" class="btn icon" data-go-kind="point" data-go-i="${i}" title="Git">➤</button>
         <button type="button" class="btn icon" data-route-kind="point" data-route-i="${i}" title="Rota">🧭</button>
-        <button type="button" class="btn icon" data-share-kind="point" data-share-i="${i}" title="Paylaş">📤</button>
         <button type="button" class="btn icon danger" data-del-pt="${escapeHtml(p.id)}">🗑</button>
       </li>`
-        )
-        .join("")
+          )
+          .join("")
+      : `<li><div class="meta"><div class="sub">Aramayla eşleşen nokta yok</div></div></li>`
     : `<li><div class="meta"><div class="sub">Kayıtlı nokta yok</div></div></li>`;
 
   const items = [
@@ -1214,23 +1230,28 @@ function renderLists() {
       color: "",
     })),
   ];
+  const filteredItems = items.filter((x) => matchesSearch(`${x.name} ${x.sub}`, q));
+  const sc = $("#shapesCount");
+  if (sc) sc.textContent = String(items.length);
+
   const sl = $("#shapesList");
   sl.innerHTML = items.length
-    ? items
-        .map(
-          (x) => `<li>
+    ? filteredItems.length
+      ? filteredItems
+          .map(
+            (x) => `<li>
         <div class="meta" data-go-kind="${x.kind}" data-go-i="${x.i}">
           <div class="name">${x.color ? `<span class="swatch-mini" style="background:${escapeHtml(x.color)}"></span>` : ""}${escapeHtml(x.name)}</div>
           <div class="sub">${escapeHtml(x.sub)}</div>
         </div>
         <button type="button" class="btn icon" data-go-kind="${x.kind}" data-go-i="${x.i}" title="Git">➤</button>
         <button type="button" class="btn icon" data-route-kind="${x.kind}" data-route-i="${x.i}" title="Rota">🧭</button>
-        <button type="button" class="btn icon" data-share-kind="${x.kind}" data-share-i="${x.i}" title="Paylaş">📤</button>
         ${x.editable ? `<button type="button" class="btn icon" data-edit-shape="${x.i}" title="Düzenle">✎</button>` : ""}
         <button type="button" class="btn icon danger" data-del-kind="${x.kind}" data-del-i="${x.i}">🗑</button>
       </li>`
-        )
-        .join("")
+          )
+          .join("")
+      : `<li><div class="meta"><div class="sub">Aramayla eşleşen şekil yok</div></div></li>`
     : `<li><div class="meta"><div class="sub">Kayıtlı şekil yok</div></div></li>`;
 }
 
@@ -1651,27 +1672,6 @@ function openTkgmInBrowser(latForClipboard) {
   toast("Sistem tarayıcısı açılıyor — enlem panoda");
 }
 
-async function shareTkgmLink() {
-  const la = $("#parselLatVal")?.dataset?.v;
-  const lo = $("#parselLonVal")?.dataset?.v;
-  let text = TKGM_PARSEL_URL;
-  if (la && lo) text = `TKGM Parsel Sorgu\nEnlem: ${la}\nBoylam: ${lo}\n${TKGM_PARSEL_URL}`;
-  try {
-    if (navigator.share) {
-      await navigator.share({ title: "TKGM Parsel Sorgu", text, url: TKGM_PARSEL_URL });
-      return;
-    }
-  } catch (e) {
-    if (e?.name === "AbortError") return;
-  }
-  try {
-    await navigator.clipboard.writeText(text);
-    toast("Bağlantı panoya kopyalandı — tarayıcıda açın");
-  } catch (_) {
-    toast("Paylaşılamadı");
-  }
-}
-
 function fmtDateTime(d = new Date()) {
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -1722,36 +1722,6 @@ function openRouteTo(lat, lon, _name) {
     "_blank",
     "noopener"
   );
-}
-
-async function shareItem(kind, index) {
-  let name = "MKSI";
-  let payload;
-  if (kind === "point") {
-    const p = state.points[index];
-    if (!p) return toast("Nokta yok");
-    payload = { app: "MKSI", version: 1, exportedAt: new Date().toISOString(), points: [p] };
-    name = p.name || "Nokta";
-  } else if (kind === "shape") {
-    const s = state.shapes[index];
-    if (!s) return toast("Şekil yok");
-    payload = { app: "MKSI", version: 1, exportedAt: new Date().toISOString(), shapes: [s] };
-    name = s.name || s.type || "Şekil";
-  } else if (kind === "draw") {
-    const d = state.drawings[index];
-    if (!d) return toast("Çizim yok");
-    payload = { app: "MKSI", version: 1, exportedAt: new Date().toISOString(), drawings: [d] };
-    name = d.name || "Çizim";
-  } else {
-    return;
-  }
-  const stamp = dateStamp();
-  const filename = exportFileName(name, stamp);
-  const r = await shareFile(filename, JSON.stringify(payload, null, 2), name);
-  if (r === "shared-file") toast(`Paylaşım açıldı: ${filename}`);
-  else if (r === "shared") toast("Paylaşım açıldı");
-  else if (r === "download-fallback") toast(`Paylaşım yok — dosya indirildi: ${filename}`);
-  else if (r !== "abort") toast("Paylaşılamadı");
 }
 
 function dateStamp() {
@@ -1958,9 +1928,6 @@ function bindUi() {
   $("#btnParselOpen").addEventListener("click", () => {
     openTkgmInBrowser();
   });
-  $("#btnParselShare")?.addEventListener("click", () => {
-    shareTkgmLink();
-  });
 
   $("#btnCircleDraw").addEventListener("click", () => {
     const mode = $("#circleCenter").value;
@@ -2081,73 +2048,35 @@ function bindUi() {
   $("#btnDrawClear").addEventListener("click", clearDrawStrokes);
   $("#btnDrawSave").addEventListener("click", saveDrawStrokes);
 
-  async function toastShareOnly(r, filename) {
-    if (r === "shared-file") toast(`Paylaşım açıldı: ${filename}`);
-    else if (r === "shared") toast("Paylaşım açıldı");
-    else if (r === "download-fallback") toast(`Paylaşım yok — dosya indirildi: ${filename}`);
-    else if (r !== "abort") toast("Paylaşılamadı");
-  }
   async function toastDownloadOnly(r, filename) {
     if (r === "download") toast(`Dosya indirildi: ${filename}`);
     else toast("Dosya indirilemedi");
   }
 
-  $("#btnShareAll").addEventListener("click", async () => {
-    const filename = exportFileName("MKSI", dateStamp());
-    await toastShareOnly(
-      await shareFile(filename, exportJson(state, "all"), "MKSI — Tümü"),
-      filename
-    );
-  });
   $("#btnExportAll").addEventListener("click", async () => {
     const filename = exportFileName("MKSI", dateStamp());
     await toastDownloadOnly(await downloadJson(filename, exportJson(state, "all")), filename);
   });
-  $("#btnSharePts").addEventListener("click", async () => {
-    if (!state.points.length) return toast("Paylaşılacak nokta yok");
-    const filename = exportFileName("Noktalar", dateStamp());
-    await toastShareOnly(
-      await shareFile(filename, exportJson(state, "points"), "MKSI — Noktalar"),
-      filename
-    );
-  });
-  $("#btnExportPts").addEventListener("click", async () => {
+  $("#btnExportPts").addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (!state.points.length) return toast("Dışa aktarılacak nokta yok");
     const filename = exportFileName("Noktalar", dateStamp());
     await toastDownloadOnly(await downloadJson(filename, exportJson(state, "points")), filename);
   });
-  $("#btnShareShapes").addEventListener("click", async () => {
-    if (!state.shapes.length && !state.drawings.length) return toast("Paylaşılacak şekil yok");
-    const filename = exportFileName("Sekiller", dateStamp());
-    await toastShareOnly(
-      await shareFile(filename, exportJson(state, "shapes"), "MKSI — Şekiller"),
-      filename
-    );
-  });
-  $("#btnExportShapes").addEventListener("click", async () => {
+  $("#btnExportShapes").addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (!state.shapes.length && !state.drawings.length) return toast("Dışa aktarılacak şekil yok");
     const filename = exportFileName("Sekiller", dateStamp());
     await toastDownloadOnly(await downloadJson(filename, exportJson(state, "shapes")), filename);
   });
-  $("#btnResultShare")?.addEventListener("click", async () => {
-    if (!pendingShape) return toast("Paylaşılacak sonuç yok");
-    const name =
-      ($("#resultName").value.trim() || pendingShape.name || defaultLabel(pendingShape)).trim() ||
-      "Şekil";
-    const sh = { ...pendingShape, name };
-    if (sh.type === "area") sh.color = $("#resultColor")?.value || sh.color || "#4a9fd4";
-    const filename = exportFileName(name, dateStamp());
-    const payload = {
-      app: "MKSI",
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      shapes: [sh],
-    };
-    await toastShareOnly(
-      await shareFile(filename, JSON.stringify(payload, null, 2), `MKSI — ${name}`),
-      filename
-    );
+  $("#menuSearch")?.addEventListener("input", () => renderLists());
+  // summary içindeki dışa aktar tıklanınca accordion kapanmasın
+  $$(".menu-export-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => e.stopPropagation());
   });
+
   async function applyImportText(text) {
     const data = parseImport(text);
     if (data.points.length) state.points = mergeById(state.points, data.points);
@@ -2193,7 +2122,6 @@ function bindUi() {
   $("#pointsList").addEventListener("click", (e) => {
     const del = e.target.closest("[data-del-pt]");
     const route = e.target.closest("[data-route-kind]");
-    const share = e.target.closest("[data-share-kind]");
     const go = e.target.closest("[data-go-kind]");
     if (del) {
       state.points = state.points.filter((x) => x.id !== del.dataset.delPt);
@@ -2207,10 +2135,6 @@ function bindUi() {
       openRouteTo(anchor.lat, anchor.lon, anchor.name);
       return;
     }
-    if (share) {
-      shareItem(share.dataset.shareKind, Number(share.dataset.shareI));
-      return;
-    }
     if (go) {
       goToItem(go.dataset.goKind, Number(go.dataset.goI));
     }
@@ -2219,7 +2143,6 @@ function bindUi() {
   $("#shapesList").addEventListener("click", (e) => {
     const del = e.target.closest("[data-del-kind]");
     const route = e.target.closest("[data-route-kind]");
-    const share = e.target.closest("[data-share-kind]");
     const go = e.target.closest("[data-go-kind]");
     const edit = e.target.closest("[data-edit-shape]");
     if (del) {
@@ -2238,10 +2161,6 @@ function bindUi() {
       const anchor = getItemAnchor(route.dataset.routeKind, Number(route.dataset.routeI));
       if (!anchor) return toast("Konum yok");
       openRouteTo(anchor.lat, anchor.lon, anchor.name);
-      return;
-    }
-    if (share) {
-      shareItem(share.dataset.shareKind, Number(share.dataset.shareI));
       return;
     }
     if (go) {
