@@ -35,7 +35,7 @@ let state = {
   points: [],
   drawings: [],
   shapes: [],
-  settings: { layer: "hybrid", lastLat: 39.92, lastLon: 32.85, lastZoom: 12 },
+  settings: { layer: "hybrid", lastLat: 39.92, lastLon: 32.85, lastZoom: 12, chromeHidden: false },
 };
 
 let map;
@@ -1091,6 +1091,24 @@ function goToLocation() {
   refreshWeather();
 }
 
+function applyChromeHidden(hidden) {
+  const app = $("#app");
+  const btn = $("#btnChromeToggle");
+  app.classList.toggle("chrome-hidden", !!hidden);
+  if (btn) {
+    btn.textContent = hidden ? "▲" : "▼";
+    btn.title = hidden ? "Alt menüyü göster" : "Alt menüyü gizle";
+  }
+  state.settings.chromeHidden = !!hidden;
+  setTimeout(() => map?.invalidateSize(), 50);
+}
+
+function toggleChrome() {
+  applyChromeHidden(!$("#app").classList.contains("chrome-hidden"));
+  persist();
+  toast($("#app").classList.contains("chrome-hidden") ? "Alt menü gizli" : "Alt menü açık");
+}
+
 function syncCircleCenterUi() {
   $("#circleSavedWrap").classList.toggle("hidden", $("#circleCenter").value !== "saved");
 }
@@ -1277,6 +1295,7 @@ function dateStamp() {
 
 function bindUi() {
   $("#btnLocate").addEventListener("click", goToLocation);
+  $("#btnChromeToggle").addEventListener("click", toggleChrome);
   $("#btnMenu").addEventListener("click", () => {
     renderLists();
     openSheet("#sheetMenu");
@@ -1581,8 +1600,10 @@ async function registerSw() {
 
 async function boot() {
   state = await loadState();
+  if (!state.settings) state.settings = {};
   initMap();
   bindUi();
+  applyChromeHidden(!!state.settings.chromeHidden);
   startGps();
   registerSw();
   const c = map.getCenter();

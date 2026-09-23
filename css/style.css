@@ -223,6 +223,42 @@ html, body {
   cursor: pointer;
 }
 
+.chrome-fab {
+  position: absolute;
+  right: 68px;
+  bottom: calc(200px + var(--safe-bottom));
+  z-index: 900;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 18px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+#app.chrome-hidden .info-strip,
+#app.chrome-hidden .toolbar {
+  display: none !important;
+}
+#app.chrome-hidden {
+  grid-template-rows: auto 1fr;
+}
+#app.chrome-hidden .locate-fab,
+#app.chrome-hidden .chrome-fab {
+  bottom: calc(16px + var(--safe-bottom));
+}
+#app.chrome-hidden .draw-bar {
+  bottom: calc(72px + var(--safe-bottom));
+}
+#app.chrome-hidden .chrome-fab {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
 .draw-bar {
   position: absolute;
   left: 50%;
