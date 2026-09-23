@@ -177,6 +177,13 @@
         <label>İsim</label>
         <input type="text" id="circleName" placeholder="örn. Güvenlik bölgesi" maxlength="64" />
       </div>
+      <div class="field">
+        <label>Renk</label>
+        <div class="color-row">
+          <input type="color" id="circleColor" value="#3d9a6a" />
+          <div class="swatches" id="circleSwatches"></div>
+        </div>
+      </div>
       <div class="actions">
         <button type="button" class="btn accent" id="btnCircleDraw">Çiz</button>
         <button type="button" class="btn" id="btnCircleClear">Temizle</button>
@@ -227,6 +234,13 @@
       <div class="field">
         <label>İsim</label>
         <input type="text" id="arcName" placeholder="örn. Ateş sahası" maxlength="64" />
+      </div>
+      <div class="field">
+        <label>Renk</label>
+        <div class="color-row">
+          <input type="color" id="arcColor" value="#e8b84a" />
+          <div class="swatches" id="arcSwatches"></div>
+        </div>
       </div>
       <div class="actions">
         <button type="button" class="btn accent" id="btnArcDraw">Kavis çiz</button>
@@ -335,6 +349,57 @@
       </div>
       <div class="actions">
         <button type="button" class="btn accent" id="btnNameOk">Kaydet</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheetEditShape">
+    <div class="sheet-head">
+      <h2 id="editShapeTitle">Şekil düzenle</h2>
+      <button type="button" class="btn icon close-sheet">✕</button>
+    </div>
+    <div class="sheet-body">
+      <input type="hidden" id="editShapeIndex" value="" />
+      <div class="field">
+        <label>İsim</label>
+        <input type="text" id="editShapeName" maxlength="64" />
+      </div>
+      <div class="field">
+        <label>Renk</label>
+        <div class="color-row">
+          <input type="color" id="editShapeColor" value="#3d9a6a" />
+          <div class="swatches" id="editSwatches"></div>
+        </div>
+      </div>
+      <div class="field hidden" id="editCircleWrap">
+        <label>Yarıçap (m)</label>
+        <input type="number" id="editCircleRadius" min="1" step="1" />
+      </div>
+      <div id="editArcWrap" class="hidden">
+        <div class="field-row">
+          <div class="field">
+            <label>İstikamet (milyem)</label>
+            <input type="number" id="editArcBearing" min="0" max="6399" step="1" />
+          </div>
+          <div class="field">
+            <label>Mesafe (m)</label>
+            <input type="number" id="editArcDist" min="1" step="1" />
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Sağ yan</label>
+            <input type="number" id="editArcRight" min="0" max="3200" step="1" />
+          </div>
+          <div class="field">
+            <label>Sol yan</label>
+            <input type="number" id="editArcLeft" min="0" max="3200" step="1" />
+          </div>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn accent" id="btnEditShapeSave">Kaydet</button>
+        <button type="button" class="btn danger" id="btnEditShapeDelete">Sil</button>
       </div>
     </div>
   </div>

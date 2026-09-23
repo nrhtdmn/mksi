@@ -70,6 +70,99 @@ function toast(msg, ms = 2200) {
   toast._t = setTimeout(() => el.classList.remove("show"), ms);
 }
 
+const COLOR_PRESETS = [
+  "#3d9a6a",
+  "#e8b84a",
+  "#4a9fd4",
+  "#d64545",
+  "#c45c26",
+  "#9b59b6",
+  "#1abc9c",
+  "#ecf0f1",
+];
+
+function initSwatches(containerId, inputId) {
+  const box = $(containerId);
+  const input = $(inputId);
+  if (!box || !input) return;
+  box.innerHTML = COLOR_PRESETS.map(
+    (c) =>
+      `<button type="button" class="swatch${input.value.toLowerCase() === c.toLowerCase() ? " active" : ""}" data-color="${c}" style="background:${c}" title="${c}"></button>`
+  ).join("");
+  box.onclick = (e) => {
+    const b = e.target.closest(".swatch");
+    if (!b) return;
+    input.value = b.dataset.color;
+    box.querySelectorAll(".swatch").forEach((s) => s.classList.toggle("active", s === b));
+  };
+  input.addEventListener("input", () => {
+    box.querySelectorAll(".swatch").forEach((s) => {
+      s.classList.toggle("active", s.dataset.color.toLowerCase() === input.value.toLowerCase());
+    });
+  });
+}
+
+function openEditShape(index) {
+  const sh = state.shapes[index];
+  if (!sh || (sh.type !== "circle" && sh.type !== "arc")) return toast("Bu şekil düzenlenemez");
+  $("#editShapeIndex").value = String(index);
+  $("#editShapeTitle").textContent = sh.type === "circle" ? "Daire düzenle" : "Kavis düzenle";
+  $("#editShapeName").value = sh.name || "";
+  $("#editShapeColor").value = sh.color || (sh.type === "circle" ? "#3d9a6a" : "#e8b84a");
+  initSwatches("#editSwatches", "#editShapeColor");
+  const isCircle = sh.type === "circle";
+  $("#editCircleWrap").classList.toggle("hidden", !isCircle);
+  $("#editArcWrap").classList.toggle("hidden", isCircle);
+  if (isCircle) {
+    $("#editCircleRadius").value = sh.radius || 500;
+  } else {
+    $("#editArcBearing").value = sh.mainMil ?? 3200;
+    $("#editArcDist").value = sh.dist || 1000;
+    $("#editArcRight").value = sh.right ?? 50;
+    $("#editArcLeft").value = sh.left ?? 60;
+  }
+  openSheet("#sheetEditShape");
+}
+
+function saveEditShape() {
+  const index = Number($("#editShapeIndex").value);
+  const sh = state.shapes[index];
+  if (!sh) return toast("Şekil yok");
+  sh.name = $("#editShapeName").value.trim() || sh.name || defaultLabel(sh);
+  sh.color = $("#editShapeColor").value || sh.color;
+  if (sh.type === "circle") {
+    const r = Number($("#editCircleRadius").value) || sh.radius;
+    sh.radius = r;
+    sh.area = circleArea(r);
+    sh.summary = `r=${r}m · ${fmtArea(sh.area)}`;
+  } else if (sh.type === "arc" && sh.center) {
+    const main = Number($("#editArcBearing").value) || 0;
+    const dist = Number($("#editArcDist").value) || 1000;
+    const right = Number($("#editArcRight").value) || 0;
+    const left = Number($("#editArcLeft").value) || 0;
+    const { pts, startMil, endMil, mainMil } = arcPoints(
+      sh.center.lat,
+      sh.center.lon,
+      main,
+      dist,
+      left,
+      right
+    );
+    sh.mainMil = mainMil;
+    sh.dist = dist;
+    sh.right = right;
+    sh.left = left;
+    sh.startMil = startMil;
+    sh.endMil = endMil;
+    sh.pts = pts;
+    sh.summary = `${mainMil} · ${dist}m`;
+  }
+  persist();
+  renderSaved();
+  closeSheets();
+  toast(`Güncellendi: ${sh.name}`);
+}
+
 function toMgrs(lat, lon) {
   try {
     if (typeof mgrs !== "undefined") return mgrs.forward([lon, lat], 5);
@@ -797,24 +890,42 @@ function saveDrawStrokes() {
 function drawCircleAt(lat, lon) {
   const r = Number($("#circleRadius").value) || 500;
   const name = $("#circleName").value.trim();
+  const color = $("#circleColor")?.value || "#3d9a6a";
   clearTemp();
-  L.circle([lat, lon], { radius: r, color: "#3d9a6a", fillOpacity: 0.15, weight: 2 }).addTo(tempLayer);
-  L.circleMarker([lat, lon], { radius: 5, color: "#e8b84a", fillOpacity: 1 }).addTo(tempLayer);
-  const edge = destination(lat, lon, 1600, r);
-  L.polyline(
-    [
-      [lat, lon],
-      [edge.lat, edge.lon],
-    ],
-    { color: "#e8b84a", weight: 2, dashArray: "4 4" }
-  ).addTo(tempLayer);
-  labelCircleShape(tempLayer, lat, lon, r, name);
+  paintCircle(tempLayer, { lat, lon }, r, color, name);
   const area = circleArea(r);
   const html = `<strong>Yarıçap:</strong> ${fmtDist(r)}<br/><strong>Alan:</strong> ${fmtArea(area)}<br/><strong>MGRS:</strong> ${toMgrs(lat, lon)}`;
   $("#circleResult").innerHTML = html;
-  pendingShape = { type: "circle", center: { lat, lon }, radius: r, area, name };
+  pendingShape = { type: "circle", center: { lat, lon }, radius: r, area, name, color };
   showResult("Daire", html, name);
   toast("Daire çizildi");
+}
+
+function paintCircle(layer, center, radius, color, name) {
+  const c = color || "#3d9a6a";
+  L.circle([center.lat, center.lon], {
+    radius,
+    color: c,
+    fillColor: c,
+    fillOpacity: 0.22,
+    weight: 3,
+  }).addTo(layer);
+  L.circleMarker([center.lat, center.lon], {
+    radius: 5,
+    color: "#fff",
+    fillColor: c,
+    fillOpacity: 1,
+    weight: 2,
+  }).addTo(layer);
+  const edge = destination(center.lat, center.lon, 1600, radius);
+  L.polyline(
+    [
+      [center.lat, center.lon],
+      [edge.lat, edge.lon],
+    ],
+    { color: c, weight: 2, dashArray: "4 4" }
+  ).addTo(layer);
+  labelCircleShape(layer, center.lat, center.lon, radius, name);
 }
 
 function drawArcAt(lat, lon) {
@@ -823,38 +934,10 @@ function drawArcAt(lat, lon) {
   const right = Number($("#arcRight").value) || 0;
   const left = Number($("#arcLeft").value) || 0;
   const name = $("#arcName").value.trim();
+  const color = $("#arcColor")?.value || "#e8b84a";
   clearTemp();
   const { pts, startMil, endMil, mainMil } = arcPoints(lat, lon, main, dist, left, right);
-  L.polyline(
-    pts.map((p) => [p.lat, p.lon]),
-    { color: "#e8b84a", weight: 3 }
-  ).addTo(tempLayer);
-  const leftPt = destination(lat, lon, startMil, dist);
-  const rightPt = destination(lat, lon, endMil, dist);
-  const midPt = destination(lat, lon, mainMil, dist);
-  L.polyline(
-    [
-      [lat, lon],
-      [midPt.lat, midPt.lon],
-    ],
-    { color: "#3d9a6a", weight: 2, dashArray: "6 4" }
-  ).addTo(tempLayer);
-  L.polyline(
-    [
-      [lat, lon],
-      [leftPt.lat, leftPt.lon],
-    ],
-    { color: "#4a9fd4", weight: 1 }
-  ).addTo(tempLayer);
-  L.polyline(
-    [
-      [lat, lon],
-      [rightPt.lat, rightPt.lon],
-    ],
-    { color: "#d64545", weight: 1 }
-  ).addTo(tempLayer);
-  L.circleMarker([lat, lon], { radius: 5, color: "#fff", fillOpacity: 1 }).addTo(tempLayer);
-  labelArcShape(tempLayer, lat, lon, mainMil, dist, left, right, startMil, endMil, name);
+  paintArc(tempLayer, { lat, lon }, pts, mainMil, dist, left, right, startMil, endMil, color, name);
   const html =
     `<strong>İstikamet:</strong> ${mainMil} milyem<br/>` +
     `<strong>Mesafe:</strong> ${fmtDist(dist)}<br/>` +
@@ -873,9 +956,56 @@ function drawArcAt(lat, lon) {
     endMil,
     pts,
     name,
+    color,
   };
   showResult("Kavis", html, name);
   toast("Kavis çizildi");
+}
+
+/** Dolu sektör + kenar çizgileri (daire gibi renkli) */
+function paintArc(layer, center, pts, mainMil, dist, left, right, startMil, endMil, color, name) {
+  const c = color || "#e8b84a";
+  const sector = [{ lat: center.lat, lon: center.lon }, ...pts];
+  L.polygon(
+    sector.map((p) => [p.lat, p.lon]),
+    { color: c, fillColor: c, fillOpacity: 0.22, weight: 2 }
+  ).addTo(layer);
+  L.polyline(
+    pts.map((p) => [p.lat, p.lon]),
+    { color: c, weight: 4, lineCap: "round" }
+  ).addTo(layer);
+  const leftPt = destination(center.lat, center.lon, startMil, dist);
+  const rightPt = destination(center.lat, center.lon, endMil, dist);
+  const midPt = destination(center.lat, center.lon, mainMil, dist);
+  L.polyline(
+    [
+      [center.lat, center.lon],
+      [midPt.lat, midPt.lon],
+    ],
+    { color: c, weight: 2, dashArray: "6 4" }
+  ).addTo(layer);
+  L.polyline(
+    [
+      [center.lat, center.lon],
+      [leftPt.lat, leftPt.lon],
+    ],
+    { color: c, weight: 2, opacity: 0.7 }
+  ).addTo(layer);
+  L.polyline(
+    [
+      [center.lat, center.lon],
+      [rightPt.lat, rightPt.lon],
+    ],
+    { color: c, weight: 2, opacity: 0.7 }
+  ).addTo(layer);
+  L.circleMarker([center.lat, center.lon], {
+    radius: 5,
+    color: "#fff",
+    fillColor: c,
+    fillOpacity: 1,
+    weight: 2,
+  }).addTo(layer);
+  labelArcShape(layer, center.lat, center.lon, mainMil, dist, left, right, startMil, endMil, name);
 }
 
 function savePointAt(lat, lon, name) {
@@ -955,39 +1085,27 @@ function renderSaved() {
 function addShapeToLayer(sh, layer) {
   const name = sh.name || "";
   if (sh.type === "circle" && sh.center) {
-    L.circle([sh.center.lat, sh.center.lon], {
-      radius: sh.radius,
-      color: "#3d9a6a",
-      fillOpacity: 0.12,
-      weight: 2,
-    }).addTo(layer);
-    const edge = destination(sh.center.lat, sh.center.lon, 1600, sh.radius);
-    L.polyline(
-      [
-        [sh.center.lat, sh.center.lon],
-        [edge.lat, edge.lon],
-      ],
-      { color: "#e8b84a", weight: 2, dashArray: "4 4" }
-    ).addTo(layer);
-    labelCircleShape(layer, sh.center.lat, sh.center.lon, sh.radius, name);
+    paintCircle(layer, sh.center, sh.radius, sh.color || "#3d9a6a", name);
   } else if (sh.type === "arc" && sh.pts) {
-    L.polyline(
-      sh.pts.map((p) => [p.lat, p.lon]),
-      { color: "#e8b84a", weight: 3 }
-    ).addTo(layer);
     if (sh.center) {
-      labelArcShape(
+      paintArc(
         layer,
-        sh.center.lat,
-        sh.center.lon,
+        sh.center,
+        sh.pts,
         sh.mainMil,
         sh.dist,
         sh.left,
         sh.right,
         sh.startMil,
         sh.endMil,
+        sh.color || "#e8b84a",
         name
       );
+    } else {
+      L.polyline(
+        sh.pts.map((p) => [p.lat, p.lon]),
+        { color: sh.color || "#e8b84a", weight: 3 }
+      ).addTo(layer);
     }
   } else if ((sh.type === "measure" || sh.type === "bearing") && sh.pts?.length === 2) {
     L.polyline(
@@ -995,13 +1113,13 @@ function addShapeToLayer(sh, layer) {
         [sh.pts[0].lat, sh.pts[0].lon],
         [sh.pts[1].lat, sh.pts[1].lon],
       ],
-      { color: "#3d9a6a", weight: 2 }
+      { color: sh.color || "#3d9a6a", weight: 2 }
     ).addTo(layer);
     labelLine(layer, sh.pts[0], sh.pts[1], sh.dist, sh.mil, name);
   } else if (sh.type === "area" && sh.pts) {
     L.polygon(
       sh.pts.map((p) => [p.lat, p.lon]),
-      { color: "#4a9fd4", weight: 2, fillOpacity: 0.15 }
+      { color: sh.color || "#4a9fd4", weight: 2, fillOpacity: 0.15, fillColor: sh.color || "#4a9fd4" }
     ).addTo(layer);
     labelAreaShape(layer, sh.pts, sh.area, name);
   } else if (sh.type === "parsel" && sh.pts?.length) {
@@ -1041,12 +1159,16 @@ function renderLists() {
       i,
       name: s.name || s.type,
       sub: s.summary || s.type,
+      editable: s.type === "circle" || s.type === "arc",
+      color: s.color || "",
     })),
     ...state.drawings.map((d, i) => ({
       kind: "draw",
       i,
       name: d.name || "Çizim",
       sub: `${d.strokes?.length || 1} çizgi`,
+      editable: false,
+      color: "",
     })),
   ];
   const sl = $("#shapesList");
@@ -1055,10 +1177,11 @@ function renderLists() {
         .map(
           (x) => `<li>
         <div class="meta" data-go-kind="${x.kind}" data-go-i="${x.i}">
-          <div class="name">${escapeHtml(x.name)}</div>
+          <div class="name">${x.color ? `<span class="swatch-mini" style="background:${escapeHtml(x.color)}"></span>` : ""}${escapeHtml(x.name)}</div>
           <div class="sub">${escapeHtml(x.sub)}</div>
         </div>
         <button type="button" class="btn icon" data-go-kind="${x.kind}" data-go-i="${x.i}" title="Git">➤</button>
+        ${x.editable ? `<button type="button" class="btn icon" data-edit-shape="${x.i}" title="Düzenle">✎</button>` : ""}
         <button type="button" class="btn icon danger" data-del-kind="${x.kind}" data-del-i="${x.i}">🗑</button>
       </li>`
         )
@@ -1695,6 +1818,7 @@ function bindUi() {
   $("#shapesList").addEventListener("click", (e) => {
     const del = e.target.closest("[data-del-kind]");
     const go = e.target.closest("[data-go-kind]");
+    const edit = e.target.closest("[data-edit-shape]");
     if (del) {
       const i = Number(del.dataset.delI);
       if (del.dataset.delKind === "shape") state.shapes.splice(i, 1);
@@ -1703,9 +1827,25 @@ function bindUi() {
       renderSaved();
       return;
     }
+    if (edit) {
+      openEditShape(Number(edit.dataset.editShape));
+      return;
+    }
     if (go) {
       goToItem(go.dataset.goKind, Number(go.dataset.goI));
     }
+  });
+
+  $("#btnEditShapeSave").addEventListener("click", saveEditShape);
+  $("#btnEditShapeDelete").addEventListener("click", () => {
+    const index = Number($("#editShapeIndex").value);
+    if (!Number.isFinite(index) || !state.shapes[index]) return;
+    if (!confirm("Bu şekil silinsin mi?")) return;
+    state.shapes.splice(index, 1);
+    persist();
+    renderSaved();
+    closeSheets();
+    toast("Silindi");
   });
 
   $("#infoMgrs").addEventListener("click", () => {
@@ -1718,6 +1858,9 @@ function bindUi() {
   window.addEventListener("online", setNetDot);
   window.addEventListener("offline", setNetDot);
   setNetDot();
+
+  initSwatches("#circleSwatches", "#circleColor");
+  initSwatches("#arcSwatches", "#arcColor");
 }
 
 async function registerSw() {
