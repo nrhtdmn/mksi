@@ -51,6 +51,11 @@ let drawLastPx = null; // {x,y} last pixel for spacing
 let drawPrimaryId = null;
 let pendingShape = null;
 let nameCallback = null;
+let tracking = false;
+let trackPts = [];
+let trackLine = null;
+let wakeLockSentinel = null;
+let quickPoint = null;
 
 function toast(msg, ms = 2200) {
   const el = $("#toast");
@@ -94,18 +99,23 @@ function initSwatches(containerId, inputId) {
 
 function openEditShape(index) {
   const sh = state.shapes[index];
-  if (!sh || (sh.type !== "circle" && sh.type !== "arc")) return toast("Bu şekil düzenlenemez");
+  if (!sh || (sh.type !== "circle" && sh.type !== "arc" && sh.type !== "area")) {
+    return toast("Bu şekil düzenlenemez");
+  }
   $("#editShapeIndex").value = String(index);
-  $("#editShapeTitle").textContent = sh.type === "circle" ? "Daire düzenle" : "Kavis düzenle";
+  $("#editShapeTitle").textContent =
+    sh.type === "circle" ? "Daire düzenle" : sh.type === "arc" ? "Kavis düzenle" : "Alan düzenle";
   $("#editShapeName").value = sh.name || "";
-  $("#editShapeColor").value = sh.color || (sh.type === "circle" ? "#3d9a6a" : "#e8b84a");
+  $("#editShapeColor").value =
+    sh.color || (sh.type === "circle" ? "#3d9a6a" : sh.type === "arc" ? "#e8b84a" : "#4a9fd4");
   initSwatches("#editSwatches", "#editShapeColor");
   const isCircle = sh.type === "circle";
+  const isArc = sh.type === "arc";
   $("#editCircleWrap").classList.toggle("hidden", !isCircle);
-  $("#editArcWrap").classList.toggle("hidden", isCircle);
+  $("#editArcWrap").classList.toggle("hidden", !isArc);
   if (isCircle) {
     $("#editCircleRadius").value = sh.radius || 500;
-  } else {
+  } else if (isArc) {
     $("#editArcBearing").value = sh.mainMil ?? 3200;
     $("#editArcDist").value = sh.dist || 1000;
     $("#editArcRight").value = sh.right ?? 50;
@@ -146,6 +156,8 @@ function saveEditShape() {
     sh.endMil = endMil;
     sh.pts = pts;
     sh.summary = `${mainMil} · ${dist}m`;
+  } else if (sh.type === "area") {
+    sh.summary = fmtArea(sh.area);
   }
   persist();
   renderSaved();
@@ -265,6 +277,10 @@ function exitDrawMode(clearStrokes = true) {
 }
 
 function setTool(name) {
+  if (tracking && name !== "track" && name !== "finishArea") {
+    stopTrack(false);
+  }
+
   const leavingDraw = activeTool === "draw" && name !== "draw";
   if (leavingDraw) exitDrawMode(true);
 
@@ -307,7 +323,10 @@ function setTool(name) {
     setModeBanner("Köşeleri işaretle — Bitir ile tamamla");
     toast("Alan: köşeleri işaretleyin");
   } else if (name === "finishArea") {
-    finishArea();
+    if (tracking) finishTrackSave();
+    else finishArea();
+  } else if (name === "track") {
+    startTrack();
   } else if (name === "draw") {
     enterDrawInteractions();
     $("#drawBar").hidden = false;
@@ -453,6 +472,16 @@ function showResult(title, html, suggestedName) {
   $("#resultTitle").textContent = title;
   $("#resultBody").innerHTML = html;
   $("#resultName").value = suggestedName || "";
+  const wrap = $("#resultColorWrap");
+  if (wrap) {
+    const isArea = pendingShape?.type === "area";
+    wrap.classList.toggle("hidden", !isArea);
+    if (isArea) {
+      const col = pendingShape.color || "#4a9fd4";
+      $("#resultColor").value = col;
+      initSwatches("#resultSwatches", "#resultColor");
+    }
+  }
   openSheet("#sheetResult");
 }
 
@@ -642,13 +671,14 @@ function finishArea() {
     return;
   }
   const area = polygonArea(areaPts);
+  const color = "#4a9fd4";
   clearTemp();
   L.polygon(
     areaPts.map((p) => [p.lat, p.lon]),
-    { color: "#4a9fd4", weight: 2, fillOpacity: 0.2 }
+    { color, fillColor: color, weight: 2, fillOpacity: 0.22 }
   ).addTo(tempLayer);
   labelAreaShape(tempLayer, areaPts, area, "");
-  pendingShape = { type: "area", pts: [...areaPts], area };
+  pendingShape = { type: "area", pts: [...areaPts], area, color };
   showResult("Alan", `<strong>Alan:</strong> ${fmtArea(area)}<br/><strong>Köşe:</strong> ${areaPts.length}`, "");
   areaPts = [];
   setModeBanner("");
@@ -733,7 +763,7 @@ function onDrawStart(e) {
   if (e.pointerType === "mouse" && e.button !== 0) return;
   if (
     e.target.closest?.(
-      ".leaflet-control, .draw-bar, .toolbar, .topbar, .chrome-fab, .locate-fab, button, .sheet, .sheet-backdrop"
+      ".leaflet-control, .draw-bar, .toolbar, .topbar, .chrome-fab, .locate-fab, .center-fab, button, .sheet, .sheet-backdrop"
     )
   ) {
     return;
@@ -1112,11 +1142,26 @@ function addShapeToLayer(sh, layer) {
     ).addTo(layer);
     labelLine(layer, sh.pts[0], sh.pts[1], sh.dist, sh.mil, name);
   } else if (sh.type === "area" && sh.pts) {
+    const col = sh.color || "#4a9fd4";
     L.polygon(
       sh.pts.map((p) => [p.lat, p.lon]),
-      { color: sh.color || "#4a9fd4", weight: 2, fillOpacity: 0.15, fillColor: sh.color || "#4a9fd4" }
+      { color: col, weight: 2, fillOpacity: 0.22, fillColor: col }
     ).addTo(layer);
     labelAreaShape(layer, sh.pts, sh.area, name);
+  } else if (sh.type === "track" && sh.pts?.length) {
+    L.polyline(
+      sh.pts.map((p) => [p.lat, p.lon]),
+      { color: sh.color || "#e85d4a", weight: 4 }
+    ).addTo(layer);
+    const midPt = sh.pts[Math.floor(sh.pts.length / 2)];
+    const nameHtml = name ? `<span class="name">${escapeHtml(name)}</span>` : "";
+    addMapLabel(
+      layer,
+      midPt.lat,
+      midPt.lon,
+      `${nameHtml}<span class="hl">${fmtDist(sh.dist || 0)}</span>`,
+      true
+    );
   } else if (sh.type === "parsel" && sh.pts?.length) {
     L.polygon(
       sh.pts.map((p) => [p.lat, p.lon]),
@@ -1156,7 +1201,7 @@ function renderLists() {
       i,
       name: s.name || s.type,
       sub: s.summary || s.type,
-      editable: s.type === "circle" || s.type === "arc",
+      editable: s.type === "circle" || s.type === "arc" || s.type === "area",
       color: s.color || "",
     })),
     ...state.drawings.map((d, i) => ({
@@ -1307,6 +1352,7 @@ function startGps() {
         gpsAccuracy.setLatLng([lat, lon]);
         gpsAccuracy.setRadius(acc || 20);
       }
+      if (tracking) appendTrackPoint(lat, lon);
     },
     (err) => toast("Konum: " + (err.message || "hata")),
     { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 }
@@ -1314,28 +1360,182 @@ function startGps() {
 }
 
 function goToLocation() {
-  if (!lastGps) {
-    toast("Konum bekleniyor…");
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        lastGps = {
-          lat: pos.coords.latitude,
-          lon: pos.coords.longitude,
-          acc: pos.coords.accuracy,
-          alt: pos.coords.altitude,
-        };
-        map.setView([lastGps.lat, lastGps.lon], Math.max(map.getZoom(), 15));
-        updateInfo(lastGps.lat, lastGps.lon);
-        refreshWeather();
-      },
-      () => toast("Konum alınamadı"),
-      { enableHighAccuracy: true, timeout: 12000 }
-    );
+  if (!navigator.geolocation) return toast("Konum desteklenmiyor");
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      const acc = pos.coords.accuracy;
+      const alt = pos.coords.altitude;
+      lastGps = { lat, lon, acc, alt };
+      map.setView([lat, lon], Math.max(map.getZoom(), 17), { animate: true });
+      if (gpsMarker) {
+        gpsMarker.setLatLng([lat, lon]);
+        if (gpsAccuracy) {
+          gpsAccuracy.setLatLng([lat, lon]);
+          gpsAccuracy.setRadius(acc || 20);
+        }
+      }
+      $("#infoAcc").textContent = acc != null ? `±${Math.round(acc)} m (GPS)` : "—";
+      if (alt != null) $("#infoElev").textContent = `${Math.round(alt)} m (GPS)`;
+      updateInfo(lat, lon);
+      toast("Konum ortalandı");
+    },
+    () => toast("Konum alınamadı"),
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+  );
+}
+
+async function requestWakeLock() {
+  try {
+    if ("wakeLock" in navigator) {
+      wakeLockSentinel = await navigator.wakeLock.request("screen");
+      wakeLockSentinel.addEventListener("release", () => {});
+    }
+  } catch (_) {}
+}
+
+async function releaseWakeLock() {
+  try {
+    await wakeLockSentinel?.release();
+  } catch (_) {}
+  wakeLockSentinel = null;
+}
+
+function trackTotalDist() {
+  let total = 0;
+  for (let i = 1; i < trackPts.length; i++) {
+    const a = trackPts[i - 1];
+    const b = trackPts[i];
+    total += distanceM(a.lat, a.lon, b.lat, b.lon);
+  }
+  return total;
+}
+
+function updateTrackLive() {
+  const el = $("#trackLive");
+  if (!el) return;
+  el.textContent = `İz · ${trackPts.length} nokta · ${fmtDist(trackTotalDist())}`;
+}
+
+function redrawTrackLine() {
+  if (trackLine) {
+    try {
+      tempLayer.removeLayer(trackLine);
+    } catch (_) {}
+    trackLine = null;
+  }
+  if (trackPts.length >= 2) {
+    trackLine = L.polyline(
+      trackPts.map((p) => [p.lat, p.lon]),
+      { color: "#e85d4a", weight: 4 }
+    ).addTo(tempLayer);
+  }
+}
+
+function appendTrackPoint(lat, lon) {
+  if (trackPts.length) {
+    const last = trackPts[trackPts.length - 1];
+    if (distanceM(last.lat, last.lon, lat, lon) < 4) {
+      map.setView([lat, lon], map.getZoom(), { animate: false });
+      return;
+    }
+  }
+  trackPts.push({ lat, lon });
+  redrawTrackLine();
+  updateTrackLive();
+  map.setView([lat, lon], map.getZoom(), { animate: false });
+}
+
+function startTrack() {
+  if (tracking) return toast("İz zaten aktif");
+  if (activeTool === "draw") exitDrawMode(true);
+  areaPts = [];
+  cancelPick();
+  clearTemp();
+  resetMapInteractions();
+
+  tracking = true;
+  trackPts = [];
+  trackLine = null;
+  $("#trackBar").hidden = false;
+  activeTool = "track";
+  highlightTool("track");
+  setModeBanner("İz takibi açık");
+  updateTrackLive();
+  if (lastGps) appendTrackPoint(lastGps.lat, lastGps.lon);
+  requestWakeLock();
+  toast("İz takibi başladı");
+}
+
+function stopTrack(save) {
+  if (save) {
+    finishTrackSave();
     return;
   }
-  map.setView([lastGps.lat, lastGps.lon], Math.max(map.getZoom(), 15));
-  updateInfo(lastGps.lat, lastGps.lon);
-  refreshWeather();
+  tracking = false;
+  trackPts = [];
+  if (trackLine) {
+    try {
+      tempLayer.removeLayer(trackLine);
+    } catch (_) {}
+    trackLine = null;
+  }
+  $("#trackBar").hidden = true;
+  if (activeTool === "track") {
+    activeTool = null;
+    clearToolHighlight();
+  }
+  setModeBanner("");
+  requestWakeLock();
+}
+
+function finishTrackSave() {
+  if (trackPts.length < 2) return toast("En az 2 nokta gerekli");
+  const pts = trackPts.map((p) => ({ lat: p.lat, lon: p.lon }));
+  const dist = trackTotalDist();
+  tracking = false;
+  trackPts = [];
+  trackLine = null;
+  $("#trackBar").hidden = true;
+  activeTool = null;
+  clearToolHighlight();
+  setModeBanner("");
+  clearTemp();
+  L.polyline(
+    pts.map((p) => [p.lat, p.lon]),
+    { color: "#e85d4a", weight: 4 }
+  ).addTo(tempLayer);
+  const midPt = pts[Math.floor(pts.length / 2)];
+  addMapLabel(
+    tempLayer,
+    midPt.lat,
+    midPt.lon,
+    `<span class="name">İz</span><span class="hl">${fmtDist(dist)}</span>`,
+    true
+  );
+  pendingShape = { type: "track", pts, dist, color: "#e85d4a" };
+  showResult(
+    "İz",
+    `<strong>Mesafe:</strong> ${fmtDist(dist)}<br/><strong>Nokta:</strong> ${pts.length}`,
+    "İz"
+  );
+  requestWakeLock();
+}
+
+function onCenterAction() {
+  const c = map.getCenter();
+  const lat = c.lat;
+  const lon = c.lng;
+
+  if (pickMode || activeTool === "area") {
+    onMapClick({ latlng: L.latLng(lat, lon) });
+    return;
+  }
+
+  quickPoint = { lat, lon };
+  $("#quickMgrs").textContent = toMgrs(lat, lon);
+  openSheet("#sheetQuick");
 }
 
 function applyChromeHidden(hidden) {
@@ -1400,7 +1600,25 @@ async function copyParselLatQuiet() {
   } catch (_) {}
 }
 
-/** TKGM sitesini tarayıcıda aç (PWA'da window.open yerine <a target=_blank>) */
+/** Sistem tarayıcısında aç (PWA / Custom Tab dışında) */
+function openInSystemBrowser(url) {
+  const u = url;
+  const ua = navigator.userAgent || "";
+  if (/Android/i.test(ua)) {
+    const without = u.replace(/^https?:\/\//i, "");
+    window.location.href = `intent://${without}#Intent;scheme=https;action=android.intent.action.VIEW;end`;
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = u;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+/** TKGM sitesini sistem tarayıcısında aç */
 function openTkgmInBrowser(latForClipboard) {
   const la = latForClipboard || $("#parselLatVal")?.dataset?.v;
   if (la) {
@@ -1408,14 +1626,7 @@ function openTkgmInBrowser(latForClipboard) {
       if (navigator.clipboard?.writeText) navigator.clipboard.writeText(la);
     } catch (_) {}
   }
-  const a = document.createElement("a");
-  a.href = TKGM_PARSEL_URL;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  a.style.display = "none";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  openInSystemBrowser(TKGM_PARSEL_URL);
   toast("TKGM tarayıcıda açıldı — enlem panoda");
 }
 
@@ -1516,6 +1727,7 @@ function defaultLabel(sh) {
   if (sh.type === "area") return "Alan";
   if (sh.type === "bearing") return "İstikamet";
   if (sh.type === "measure") return "Mesafe";
+  if (sh.type === "track") return "İz";
   if (sh.type === "draw") return "Çizim";
   if (sh.type === "parsel") return sh.ozet || "Parsel";
   return "Şekil";
@@ -1530,6 +1742,7 @@ function mergeById(a, b) {
 function bindUi() {
   $("#btnLocate").addEventListener("click", goToLocation);
   $("#btnChromeToggle").addEventListener("click", toggleChrome);
+  $("#btnCenterAction")?.addEventListener("click", onCenterAction);
   $("#btnMenu").addEventListener("click", () => {
     renderLists();
     openSheet("#sheetMenu");
@@ -1550,6 +1763,7 @@ function bindUi() {
       }
       if (activeTool === t && t !== "weather") {
         if (t === "draw") exitDrawMode(true);
+        if (t === "track") stopTrack(false);
         setTool(null);
         clearTemp();
         setModeBanner("");
@@ -1559,6 +1773,73 @@ function bindUi() {
       setTool(t);
     })
   );
+
+  $("#btnTrackCancel")?.addEventListener("click", () => stopTrack(false));
+  $("#btnTrackFinish")?.addEventListener("click", () => finishTrackSave());
+
+  $("#btnQuickMeasure")?.addEventListener("click", () => {
+    if (!quickPoint) return;
+    const { lat, lon } = quickPoint;
+    closeSheets();
+    measureKind = "measure";
+    activeTool = "measure";
+    highlightTool("measure");
+    clearTemp();
+    measurePts = [{ lat, lon }];
+    L.circleMarker([lat, lon], { radius: 6, color: "#e8b84a", fillOpacity: 1 }).addTo(tempLayer);
+    pickMode = "measure2";
+    setModeBanner("2. noktaya dokun veya ◎");
+  });
+  $("#btnQuickBearing")?.addEventListener("click", () => {
+    if (!quickPoint) return;
+    const { lat, lon } = quickPoint;
+    closeSheets();
+    measureKind = "bearing";
+    activeTool = "bearing";
+    highlightTool("bearing");
+    clearTemp();
+    measurePts = [{ lat, lon }];
+    L.circleMarker([lat, lon], { radius: 6, color: "#e8b84a", fillOpacity: 1 }).addTo(tempLayer);
+    pickMode = "measure2";
+    setModeBanner("2. noktaya dokun veya ◎");
+  });
+  $("#btnQuickCircle")?.addEventListener("click", () => {
+    if (!quickPoint) return;
+    const { lat, lon } = quickPoint;
+    closeSheets();
+    drawCircleAt(lat, lon);
+  });
+  $("#btnQuickArc")?.addEventListener("click", () => {
+    if (!quickPoint) return;
+    const { lat, lon } = quickPoint;
+    closeSheets();
+    drawArcAt(lat, lon);
+  });
+  $("#btnQuickArea")?.addEventListener("click", () => {
+    if (!quickPoint) return;
+    const { lat, lon } = quickPoint;
+    closeSheets();
+    activeTool = "area";
+    highlightTool("area");
+    areaPts = [{ lat, lon }];
+    clearTemp();
+    map.doubleClickZoom.disable();
+    L.circleMarker([lat, lon], { radius: 5, color: "#4a9fd4", fillOpacity: 1 }).addTo(tempLayer);
+    setModeBanner("1 köşe — Bitir ile tamamla");
+  });
+  $("#btnQuickPoint")?.addEventListener("click", () => {
+    if (!quickPoint) return;
+    const { lat, lon } = quickPoint;
+    closeSheets();
+    askName("Nokta", (name) => {
+      savePointAt(lat, lon, name || "Nokta");
+    });
+  });
+  $("#btnQuickParsel")?.addEventListener("click", () => {
+    if (!quickPoint) return;
+    const { lat, lon } = quickPoint;
+    showParselRedirect(lat, lon);
+  });
 
   $("#measureMode").addEventListener("change", () => {
     $("#measureSavedFields").classList.toggle("hidden", $("#measureMode").value !== "saved");
@@ -1627,9 +1908,9 @@ function bindUi() {
   $("#btnParselCopyLon").addEventListener("click", () =>
     copyText($("#parselLonVal").dataset.v || $("#parselLonVal").textContent)
   );
-  $("#btnParselOpen").addEventListener("click", () => {
-    copyParselLatQuiet();
-    toast("Enlem panoda → Coğrafi sekmesi → yapıştır");
+  $("#btnParselOpen").addEventListener("click", (e) => {
+    e.preventDefault();
+    openTkgmInBrowser();
   });
 
   $("#btnCircleDraw").addEventListener("click", () => {
@@ -1722,9 +2003,13 @@ function bindUi() {
       name: name || defaultLabel(pendingShape),
       savedAt: new Date().toISOString(),
     };
+    if (sh.type === "area") {
+      sh.color = $("#resultColor")?.value || sh.color || "#4a9fd4";
+    }
     if (sh.type === "circle") sh.summary = `r=${sh.radius}m · ${fmtArea(sh.area)}`;
     else if (sh.type === "arc") sh.summary = `${sh.mainMil} · ${sh.dist}m`;
     else if (sh.type === "area") sh.summary = fmtArea(sh.area);
+    else if (sh.type === "track") sh.summary = fmtDist(sh.dist);
     else if (sh.type === "parsel") sh.summary = sh.summary || sh.ozet || "Parsel";
     else if (sh.dist != null) sh.summary = `${fmtDist(sh.dist)} · ${sh.mil} milyem`;
     state.shapes.push(sh);
@@ -1886,6 +2171,10 @@ function bindUi() {
   window.addEventListener("offline", setNetDot);
   setNetDot();
 
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") requestWakeLock();
+  });
+
   initSwatches("#circleSwatches", "#circleColor");
   initSwatches("#arcSwatches", "#arcColor");
 }
@@ -1905,6 +2194,7 @@ async function boot() {
   applyChromeHidden(!!state.settings.chromeHidden);
   startGps();
   registerSw();
+  requestWakeLock();
   const c = map.getCenter();
   updateInfo(c.lat, c.lng, { fromMap: true });
 }

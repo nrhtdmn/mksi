@@ -27,11 +27,14 @@
       <button type="button" class="btn icon" id="btnMenu" title="Menü" aria-label="Menü">☰</button>
     </header>
 
-    <div id="map"></div>
-    <div class="crosshair" id="crosshair" aria-hidden="true">
-      <span class="ch-h"></span>
-      <span class="ch-v"></span>
-      <span class="ch-dot"></span>
+    <div id="mapWrap" class="map-wrap">
+      <div id="map"></div>
+      <div class="crosshair" id="crosshair" aria-hidden="true">
+        <span class="ch-h"></span>
+        <span class="ch-v"></span>
+        <span class="ch-dot"></span>
+      </div>
+      <button type="button" class="center-fab" id="btnCenterAction" title="Merkez">◎</button>
     </div>
     <div class="mode-banner" id="modeBanner"></div>
     <button type="button" class="locate-fab" id="btnLocate" title="Konumu ortala" aria-label="Konum">⌖</button>
@@ -41,6 +44,12 @@
       <button type="button" class="btn" id="btnDrawUndo">Geri</button>
       <button type="button" class="btn danger" id="btnDrawClear">Temizle</button>
       <button type="button" class="btn accent" id="btnDrawSave">Kaydet</button>
+    </div>
+
+    <div class="draw-bar" id="trackBar" hidden>
+      <span class="track-live" id="trackLive">İz…</span>
+      <button type="button" id="btnTrackCancel" class="btn danger">İptal</button>
+      <button type="button" id="btnTrackFinish" class="btn accent">Bitir</button>
     </div>
 
     <div class="info-strip" id="infoStrip">
@@ -60,6 +69,7 @@
       <button type="button" class="btn" data-tool="arc"><span class="ico">⌒</span><span class="txt">Kavis</span></button>
       <button type="button" class="btn" data-tool="area"><span class="ico">⬡</span><span class="txt">Alan</span></button>
       <button type="button" class="btn" data-tool="finishArea"><span class="ico">✓</span><span class="txt">Bitir</span></button>
+      <button type="button" class="btn" data-tool="track"><span class="ico">⌀</span><span class="txt">İz</span></button>
       <button type="button" class="btn" data-tool="draw"><span class="ico">✎</span><span class="txt">Kalem</span></button>
       <button type="button" class="btn" data-tool="savept"><span class="ico">📍</span><span class="txt">Nokta</span></button>
       <button type="button" class="btn" data-tool="parsel"><span class="ico">▤</span><span class="txt">Parsel</span></button>
@@ -338,9 +348,35 @@
         <label>İsim</label>
         <input type="text" id="resultName" placeholder="Bu şekle isim ver" maxlength="64" />
       </div>
+      <div class="field hidden" id="resultColorWrap">
+        <label>Renk</label>
+        <div class="color-row">
+          <input type="color" id="resultColor" value="#4a9fd4" />
+          <div class="swatches" id="resultSwatches"></div>
+        </div>
+      </div>
       <div class="actions">
         <button type="button" class="btn accent" id="btnResultSave">Kaydet</button>
         <button type="button" class="btn danger" id="btnResultClear">Temizle</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheetQuick">
+    <div class="sheet-head">
+      <h2>Bu noktadan</h2>
+      <button type="button" class="btn icon close-sheet">✕</button>
+    </div>
+    <div class="sheet-body">
+      <p class="hint">MGRS: <span class="mono" id="quickMgrs">—</span></p>
+      <div class="actions quick-actions">
+        <button type="button" class="btn" id="btnQuickMeasure">Mesafe</button>
+        <button type="button" class="btn" id="btnQuickBearing">İstikamet</button>
+        <button type="button" class="btn" id="btnQuickCircle">Daire</button>
+        <button type="button" class="btn" id="btnQuickArc">Kavis</button>
+        <button type="button" class="btn" id="btnQuickArea">Alan köşesi</button>
+        <button type="button" class="btn" id="btnQuickPoint">Nokta kaydet</button>
+        <button type="button" class="btn" id="btnQuickParsel">Parsel</button>
       </div>
     </div>
   </div>
