@@ -420,6 +420,24 @@ html, body {
   margin: 0 0 12px;
   line-height: 1.4;
 }
+
+.app-credit {
+  margin: 18px 0 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  text-align: center;
+}
+.app-credit a {
+  color: var(--accent-2);
+  text-decoration: none;
+  font-weight: 700;
+}
+.app-credit a:active {
+  opacity: 0.85;
+}
 .actions {
   display: flex;
   flex-wrap: wrap;
