@@ -202,10 +202,24 @@ function parseCoordInput(raw) {
 
 let quickSearchHit = null; // { lat, lon, name }
 
+function fillQgAddFromCenter() {
+  if (!map) return;
+  const c = map.getCenter();
+  const lat = c.lat;
+  const lon = c.lng;
+  const mgrsEl = $("#qgAddMgrs");
+  const latEl = $("#qgAddLat");
+  const lonEl = $("#qgAddLon");
+  if (mgrsEl) mgrsEl.value = toMgrs(lat, lon);
+  if (latEl) latEl.value = lat.toFixed(6);
+  if (lonEl) lonEl.value = lon.toFixed(6);
+}
+
 function syncQgAddFmt() {
   const fmt = $("#qgAddFmt")?.value || "mgrs";
   $("#qgAddMgrsWrap")?.classList.toggle("hidden", fmt !== "mgrs");
   $("#qgAddLlWrap")?.classList.toggle("hidden", fmt !== "ll");
+  fillQgAddFromCenter();
 }
 
 function setQuickGoTab(tab) {
@@ -214,7 +228,10 @@ function setQuickGoTab(tab) {
   $("#quickGoSearch")?.classList.toggle("hidden", tab !== "search");
   if (tab === "add") {
     syncQgAddFmt();
-    setTimeout(() => $("#qgAddMgrs")?.focus(), 50);
+    setTimeout(() => {
+      if ($("#qgAddFmt")?.value === "mgrs") $("#qgAddName")?.focus();
+      else $("#qgAddName")?.focus();
+    }, 50);
   } else {
     setTimeout(() => $("#qgSearchInput")?.focus(), 50);
   }
@@ -224,12 +241,10 @@ function openQuickGoSheet() {
   quickSearchHit = null;
   $("#qgSearchResults").innerHTML = "";
   $("#qgSearchActions").hidden = true;
-  $("#qgAddMgrs").value = "";
-  $("#qgAddLat").value = "";
-  $("#qgAddLon").value = "";
   $("#qgAddName").value = "";
   $("#qgSearchInput").value = "";
   $("#qgAddFmt").value = "mgrs";
+  fillQgAddFromCenter();
   setQuickGoTab("add");
   openSheet("#sheetQuickGo");
 }
@@ -239,12 +254,19 @@ function goToLatLon(lat, lon, zoom = 15) {
   updateInfo(lat, lon);
 }
 
-function selectQuickSearchHit(hit) {
+function selectQuickSearchHit(hit, fly = true) {
   quickSearchHit = hit;
   $("#qgSearchActions").hidden = !hit;
   $$("#qgSearchResults li").forEach((li) => {
-    li.classList.toggle("active", Number(li.dataset.i) === hit?._i);
+    const on = Number(li.dataset.qgI) === hit?._i;
+    li.classList.toggle("active", on);
+    const mark = li.querySelector(".qg-pick");
+    if (mark) mark.textContent = on ? "●" : "○";
   });
+  if (fly && hit) {
+    goToLatLon(hit.lat, hit.lon);
+    toast("Konum seçildi — eklemek için Ekle");
+  }
 }
 
 async function runQuickSearch() {
@@ -320,18 +342,19 @@ async function runQuickSearch() {
     .slice(0, 12)
     .map((h, i) => {
       h._i = i;
-      return `<li data-qg-i="${i}">
+      return `<li data-qg-i="${i}" class="qg-hit">
         <div class="meta">
           <div class="name">${escapeHtml(h.name)}</div>
           <div class="sub">${escapeHtml(h.sub)}</div>
         </div>
+        <span class="qg-pick" aria-hidden="true">○</span>
       </li>`;
     })
     .join("");
 
   // store on element
   list._hits = hits.slice(0, 12);
-  if (list._hits.length === 1) selectQuickSearchHit(list._hits[0]);
+  if (list._hits.length === 1) selectQuickSearchHit(list._hits[0], true);
 }
 
 function doQuickAdd() {
@@ -1977,13 +2000,7 @@ function bindUi() {
     if (!li) return;
     const hits = $("#qgSearchResults")._hits || [];
     const hit = hits[Number(li.dataset.qgI)];
-    if (hit) selectQuickSearchHit(hit);
-  });
-  $("#btnQgGo")?.addEventListener("click", () => {
-    if (!quickSearchHit) return toast("Sonuç seçin");
-    goToLatLon(quickSearchHit.lat, quickSearchHit.lon);
-    closeSheets();
-    toast("Konuma gidildi");
+    if (hit) selectQuickSearchHit(hit, true);
   });
   $("#btnQgGoAdd")?.addEventListener("click", () => {
     if (!quickSearchHit) return toast("Sonuç seçin");

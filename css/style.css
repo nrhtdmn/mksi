@@ -507,8 +507,25 @@ html, body {
 
 .list { list-style: none; }
 .list li.active {
-  background: rgba(61, 154, 106, 0.15);
+  background: rgba(61, 154, 106, 0.22);
   border-radius: 8px;
+  outline: 1px solid var(--accent);
+}
+#qgSearchResults li.qg-hit {
+  cursor: pointer;
+  padding: 10px 8px;
+}
+#qgSearchResults li.qg-hit .qg-pick {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 0 4px;
+}
+#qgSearchResults li.qg-hit.active .qg-pick {
+  color: var(--accent-2);
+}
+#qgSearchResults li.qg-hit.active .name {
+  color: var(--accent-2);
 }
 .list li .meta {
   flex: 1 1 100%;
