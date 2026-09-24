@@ -231,6 +231,25 @@ html, body {
   cursor: pointer;
 }
 
+.go-fab {
+  position: absolute;
+  right: 12px;
+  bottom: calc(260px + var(--safe-bottom));
+  z-index: 1200;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--accent-2);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+.go-fab:active { transform: scale(0.96); }
+
 .top-chrome-btn {
   min-height: 36px;
   padding: 6px 10px;
@@ -255,6 +274,10 @@ html, body {
   bottom: calc(12px + var(--safe-bottom));
   right: 12px;
 }
+#app.chrome-hidden .go-fab {
+  bottom: calc(68px + var(--safe-bottom));
+  right: 12px;
+}
 /* İz / kalem çubuğu: en altta, konumun solunda */
 #app.chrome-hidden .draw-bar {
   left: 12px;
@@ -264,6 +287,32 @@ html, body {
   justify-content: flex-start;
   flex-wrap: wrap;
   max-width: none;
+}
+
+.tab-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+}
+.tab-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 36px;
+}
+.tab-btn.active {
+  background: var(--accent);
+  color: #fff;
 }
 
 .draw-bar {
@@ -457,14 +506,9 @@ html, body {
 .result-box strong { color: var(--accent-2); }
 
 .list { list-style: none; }
-.list li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
+.list li.active {
+  background: rgba(61, 154, 106, 0.15);
+  border-radius: 8px;
 }
 .list li .meta {
   flex: 1 1 100%;

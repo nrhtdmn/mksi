@@ -180,6 +180,179 @@ function fromMgrs(str) {
   return { lat, lon };
 }
 
+/** MGRS veya "lat,lon" / "lat lon" */
+function parseCoordInput(raw) {
+  const s = String(raw || "").trim();
+  if (!s) throw new Error("Boş");
+  const ll = s.match(/^(-?\d+(?:[.,]\d+)?)\s*[,;\s]\s*(-?\d+(?:[.,]\d+)?)$/);
+  if (ll) {
+    const lat = Number(ll[1].replace(",", "."));
+    const lon = Number(ll[2].replace(",", "."));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error("Geçersiz enlem/boylam");
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) throw new Error("Geçersiz enlem/boylam");
+    return { lat, lon, label: `${lat.toFixed(5)}, ${lon.toFixed(5)}` };
+  }
+  try {
+    const { lat, lon } = fromMgrs(s);
+    return { lat, lon, label: toMgrs(lat, lon) };
+  } catch (_) {
+    throw new Error("Koordinat çözülemedi");
+  }
+}
+
+let quickSearchHit = null; // { lat, lon, name }
+
+function syncQgAddFmt() {
+  const fmt = $("#qgAddFmt")?.value || "mgrs";
+  $("#qgAddMgrsWrap")?.classList.toggle("hidden", fmt !== "mgrs");
+  $("#qgAddLlWrap")?.classList.toggle("hidden", fmt !== "ll");
+}
+
+function setQuickGoTab(tab) {
+  $$("#quickGoTabs .tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.qtab === tab));
+  $("#quickGoAdd")?.classList.toggle("hidden", tab !== "add");
+  $("#quickGoSearch")?.classList.toggle("hidden", tab !== "search");
+  if (tab === "add") {
+    syncQgAddFmt();
+    setTimeout(() => $("#qgAddMgrs")?.focus(), 50);
+  } else {
+    setTimeout(() => $("#qgSearchInput")?.focus(), 50);
+  }
+}
+
+function openQuickGoSheet() {
+  quickSearchHit = null;
+  $("#qgSearchResults").innerHTML = "";
+  $("#qgSearchActions").hidden = true;
+  $("#qgAddMgrs").value = "";
+  $("#qgAddLat").value = "";
+  $("#qgAddLon").value = "";
+  $("#qgAddName").value = "";
+  $("#qgSearchInput").value = "";
+  $("#qgAddFmt").value = "mgrs";
+  setQuickGoTab("add");
+  openSheet("#sheetQuickGo");
+}
+
+function goToLatLon(lat, lon, zoom = 15) {
+  map.setView([lat, lon], Math.max(map.getZoom(), zoom), { animate: true });
+  updateInfo(lat, lon);
+}
+
+function selectQuickSearchHit(hit) {
+  quickSearchHit = hit;
+  $("#qgSearchActions").hidden = !hit;
+  $$("#qgSearchResults li").forEach((li) => {
+    li.classList.toggle("active", Number(li.dataset.i) === hit?._i);
+  });
+}
+
+async function runQuickSearch() {
+  const q = ($("#qgSearchInput")?.value || "").trim();
+  const list = $("#qgSearchResults");
+  const actions = $("#qgSearchActions");
+  quickSearchHit = null;
+  actions.hidden = true;
+  if (!q) {
+    list.innerHTML = `<li><div class="meta"><div class="sub">Arama yazın</div></div></li>`;
+    return;
+  }
+
+  const hits = [];
+
+  // 1) Koordinat / MGRS
+  try {
+    const c = parseCoordInput(q);
+    hits.push({ lat: c.lat, lon: c.lon, name: c.label, sub: "Koordinat", source: "coord" });
+  } catch (_) {}
+
+  // 2) Kayıtlı noktalar
+  const ql = q.toLocaleLowerCase("tr");
+  for (const p of state.points) {
+    const hay = `${p.name} ${p.mgrs || ""}`.toLocaleLowerCase("tr");
+    if (hay.includes(ql)) {
+      hits.push({
+        lat: p.lat,
+        lon: p.lon,
+        name: p.name,
+        sub: p.mgrs || toMgrs(p.lat, p.lon),
+        source: "saved",
+      });
+    }
+  }
+
+  // 3) Yer adı (Nominatim — çevrimiçi)
+  if (navigator.onLine && hits.length < 8) {
+    try {
+      toast("Aranıyor…");
+      const url =
+        `https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=tr&q=` +
+        encodeURIComponent(q);
+      const res = await fetch(url, {
+        headers: { Accept: "application/json" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        for (const row of data) {
+          const lat = Number(row.lat);
+          const lon = Number(row.lon);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+          hits.push({
+            lat,
+            lon,
+            name: row.display_name?.split(",")[0] || q,
+            sub: row.display_name || "",
+            source: "geo",
+          });
+        }
+      }
+    } catch (_) {
+      /* offline / network */
+    }
+  }
+
+  if (!hits.length) {
+    list.innerHTML = `<li><div class="meta"><div class="sub">Sonuç yok</div></div></li>`;
+    return;
+  }
+
+  list.innerHTML = hits
+    .slice(0, 12)
+    .map((h, i) => {
+      h._i = i;
+      return `<li data-qg-i="${i}">
+        <div class="meta">
+          <div class="name">${escapeHtml(h.name)}</div>
+          <div class="sub">${escapeHtml(h.sub)}</div>
+        </div>
+      </li>`;
+    })
+    .join("");
+
+  // store on element
+  list._hits = hits.slice(0, 12);
+  if (list._hits.length === 1) selectQuickSearchHit(list._hits[0]);
+}
+
+function doQuickAdd() {
+  try {
+    let lat;
+    let lon;
+    if ($("#qgAddFmt").value === "mgrs") {
+      ({ lat, lon } = fromMgrs($("#qgAddMgrs").value));
+    } else {
+      lat = Number($("#qgAddLat").value);
+      lon = Number($("#qgAddLon").value);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error("Geçersiz enlem/boylam");
+    }
+    const name = $("#qgAddName").value.trim() || toMgrs(lat, lon);
+    savePointAt(lat, lon, name);
+    closeSheets();
+  } catch (err) {
+    toast("Hata: " + (err.message || err));
+  }
+}
+
 function uid() {
   return crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -763,7 +936,7 @@ function onDrawStart(e) {
   if (e.pointerType === "mouse" && e.button !== 0) return;
   if (
     e.target.closest?.(
-      ".leaflet-control, .draw-bar, .toolbar, .topbar, .locate-fab, .center-fab, button, .sheet, .sheet-backdrop"
+      ".leaflet-control, .draw-bar, .toolbar, .topbar, .locate-fab, .go-fab, .center-fab, button, .sheet, .sheet-backdrop"
     )
   ) {
     return;
@@ -1783,8 +1956,42 @@ function mergeById(a, b) {
 
 function bindUi() {
   $("#btnLocate").addEventListener("click", goToLocation);
+  $("#btnQuickGo")?.addEventListener("click", openQuickGoSheet);
   $("#btnChromeToggle").addEventListener("click", toggleChrome);
   $("#btnCenterAction")?.addEventListener("click", onCenterAction);
+
+  $$("#quickGoTabs .tab-btn").forEach((b) =>
+    b.addEventListener("click", () => setQuickGoTab(b.dataset.qtab))
+  );
+  $("#qgAddFmt")?.addEventListener("change", syncQgAddFmt);
+  $("#btnQgAdd")?.addEventListener("click", doQuickAdd);
+  $("#qgAddMgrs")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") doQuickAdd();
+  });
+  $("#btnQgSearch")?.addEventListener("click", () => runQuickSearch());
+  $("#qgSearchInput")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") runQuickSearch();
+  });
+  $("#qgSearchResults")?.addEventListener("click", (e) => {
+    const li = e.target.closest("[data-qg-i]");
+    if (!li) return;
+    const hits = $("#qgSearchResults")._hits || [];
+    const hit = hits[Number(li.dataset.qgI)];
+    if (hit) selectQuickSearchHit(hit);
+  });
+  $("#btnQgGo")?.addEventListener("click", () => {
+    if (!quickSearchHit) return toast("Sonuç seçin");
+    goToLatLon(quickSearchHit.lat, quickSearchHit.lon);
+    closeSheets();
+    toast("Konuma gidildi");
+  });
+  $("#btnQgGoAdd")?.addEventListener("click", () => {
+    if (!quickSearchHit) return toast("Sonuç seçin");
+    const name = quickSearchHit.name || toMgrs(quickSearchHit.lat, quickSearchHit.lon);
+    savePointAt(quickSearchHit.lat, quickSearchHit.lon, name);
+    closeSheets();
+  });
+
   $("#btnMenu").addEventListener("click", () => {
     renderLists();
     openSheet("#sheetMenu");
