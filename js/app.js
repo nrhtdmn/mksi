@@ -885,7 +885,7 @@ function initMap() {
   renderSaved();
 }
 
-function setBaseLayer(name) {
+function setBaseLayer(name, opts = {}) {
   if (map.hasLayer(layers.street)) map.removeLayer(layers.street);
   if (map.hasLayer(layers.hybrid)) map.removeLayer(layers.hybrid);
   if (map.hasLayer(layers.topo)) map.removeLayer(layers.topo);
@@ -898,10 +898,15 @@ function setBaseLayer(name) {
     name = "hybrid";
   }
   state.settings.layer = name;
-  $$("#layerToggle button").forEach((b) =>
+  syncLayerUi(name);
+  persist();
+  if (opts.close) closeSheets();
+}
+
+function syncLayerUi(name = state.settings.layer) {
+  $$("#layerList .layer-item").forEach((b) =>
     b.classList.toggle("active", b.dataset.layer === name)
   );
-  persist();
 }
 
 function onMapClick(e) {
@@ -2190,11 +2195,15 @@ function bindUi() {
     renderLists();
     openSheet("#sheetMenu");
   });
+  $("#btnLayers")?.addEventListener("click", () => {
+    syncLayerUi();
+    openSheet("#sheetLayers");
+  });
   $("#backdrop").addEventListener("click", closeSheets);
   $$(".close-sheet").forEach((b) => b.addEventListener("click", closeSheets));
 
-  $$("#layerToggle button").forEach((b) =>
-    b.addEventListener("click", () => setBaseLayer(b.dataset.layer))
+  $$("#layerList .layer-item").forEach((b) =>
+    b.addEventListener("click", () => setBaseLayer(b.dataset.layer, { close: true }))
   );
 
   $$("#toolbar .btn").forEach((b) =>
