@@ -1471,7 +1471,10 @@ function renderSaved() {
         weight: 3,
       })
         .addTo(savedLayer)
-        .bindPopup(`<b>${escapeHtml(p.name)}</b><br/>${escapeHtml(p.mgrs || toMgrs(p.lat, p.lon))}`);
+        .on("click", (e) => {
+          L.DomEvent.stopPropagation(e);
+          openQuickMenu({ lat: p.lat, lon: p.lon, name: p.name });
+        });
       addMapLabel(
         savedLayer,
         p.lat,
@@ -1982,8 +1985,22 @@ function onCenterAction() {
     return;
   }
 
-  quickPoint = { lat, lon };
-  $("#quickMgrs").textContent = toMgrs(lat, lon);
+  openQuickMenu({ lat, lon, name: null });
+}
+
+function openQuickMenu({ lat, lon, name }) {
+  quickPoint = { lat, lon, name: name || null };
+  const title = $("#quickTitle");
+  if (title) title.textContent = name || "Bu noktadan";
+  const mgrs = toMgrs(lat, lon);
+  const la = Number(lat).toFixed(6);
+  const lo = Number(lon).toFixed(6);
+  const mgrsEl = $("#quickMgrs");
+  const latEl = $("#quickLat");
+  const lonEl = $("#quickLon");
+  if (mgrsEl) mgrsEl.textContent = mgrs;
+  if (latEl) latEl.textContent = la;
+  if (lonEl) lonEl.textContent = lo;
   openSheet("#sheetQuick");
 }
 
@@ -2720,6 +2737,9 @@ function bindUi() {
   });
   $("#infoLat").addEventListener("click", () => copyText($("#infoLat").textContent));
   $("#infoLon").addEventListener("click", () => copyText($("#infoLon").textContent));
+  $("#quickMgrs")?.addEventListener("click", () => copyText($("#quickMgrs").textContent));
+  $("#quickLat")?.addEventListener("click", () => copyText($("#quickLat").textContent));
+  $("#quickLon")?.addEventListener("click", () => copyText($("#quickLon").textContent));
 
   window.addEventListener("online", setNetDot);
   window.addEventListener("offline", setNetDot);

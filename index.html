@@ -469,11 +469,17 @@
 
   <div class="sheet" id="sheetQuick">
     <div class="sheet-head">
-      <h2>Bu noktadan</h2>
+      <div class="sheet-head-main">
+        <h2 id="quickTitle">Bu noktadan</h2>
+        <div class="quick-meta">
+          <span class="val copyable mono" id="quickMgrs" title="MGRS kopyala">—</span>
+          <span class="val copyable" id="quickLat" title="Enlem kopyala">—</span>
+          <span class="val copyable" id="quickLon" title="Boylam kopyala">—</span>
+        </div>
+      </div>
       <button type="button" class="btn icon close-sheet">✕</button>
     </div>
     <div class="sheet-body">
-      <p class="hint">MGRS: <span class="mono" id="quickMgrs">—</span></p>
       <div class="actions quick-actions">
         <button type="button" class="btn" id="btnQuickMeasure">Mesafe</button>
         <button type="button" class="btn" id="btnQuickBearing">İstikamet</button>
