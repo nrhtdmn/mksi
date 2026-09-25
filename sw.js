@@ -1,6 +1,6 @@
 /* MKSI service worker — app shell + runtime tile cache. No push. */
-const CACHE_APP = "mksi-app-v34";
-const CACHE_TILES = "mksi-tiles-v34";
+const CACHE_APP = "mksi-app-v35";
+const CACHE_TILES = "mksi-tiles-v35";
 
 const APP_ASSETS = [
   "./",

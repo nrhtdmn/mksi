@@ -414,6 +414,56 @@ function closeSheets() {
   $$(".sheet").forEach((s) => s.classList.remove("open"));
 }
 
+/** Kullanıcı X / arka plan ile kapattı: kaydedilmemiş işlemi iptal et */
+function userCloseSheets() {
+  const resultOpen = $("#sheetResult")?.classList.contains("open");
+  const nameOpen = $("#sheetName")?.classList.contains("open");
+  const toolSheetOpen = [
+    "#sheetMeasure",
+    "#sheetCircle",
+    "#sheetArc",
+    "#sheetSavePt",
+    "#sheetParsel",
+    "#sheetQuick",
+  ].some((id) => $(id)?.classList.contains("open"));
+
+  closeSheets();
+
+  if (resultOpen || nameOpen) {
+    abortUnsavedWork();
+    return;
+  }
+
+  // Araç menüsü kapanınca henüz kaydedilmemiş seçim / geçici çizim de bitsin
+  if (toolSheetOpen && (pickMode || measurePts.length || pendingShape || (activeTool === "area" && areaPts.length))) {
+    abortUnsavedWork();
+  }
+}
+
+function abortUnsavedWork() {
+  const hadWork =
+    !!pendingShape ||
+    !!pickMode ||
+    measurePts.length > 0 ||
+    areaPts.length > 0 ||
+    !!nameCallback;
+
+  nameCallback = null;
+  cancelPick();
+  clearTemp();
+  areaPts = [];
+
+  if (activeTool === "area") {
+    map?.doubleClickZoom?.enable();
+  }
+  if (activeTool && activeTool !== "draw" && activeTool !== "track") {
+    activeTool = null;
+    clearToolHighlight();
+  }
+  setModeBanner("");
+  if (hadWork) toast("İşlem iptal edildi");
+}
+
 function setModeBanner(text) {
   const b = $("#modeBanner");
   if (!text) {
@@ -2266,8 +2316,8 @@ function bindUi() {
     syncLayerUi();
     openSheet("#sheetLayers");
   });
-  $("#backdrop").addEventListener("click", closeSheets);
-  $$(".close-sheet").forEach((b) => b.addEventListener("click", closeSheets));
+  $("#backdrop").addEventListener("click", userCloseSheets);
+  $$(".close-sheet").forEach((b) => b.addEventListener("click", userCloseSheets));
 
   $$("#layerList .layer-item").forEach((b) =>
     b.addEventListener("click", () => setBaseLayer(b.dataset.layer, { close: true }))
