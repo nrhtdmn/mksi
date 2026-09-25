@@ -835,6 +835,11 @@ function initMap() {
     { maxZoom: 19, opacity: 0.85, crossOrigin: true }
   );
   layers.hybrid = L.layerGroup([layers.sat, layers.labels]);
+  layers.topo = L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
+    maxZoom: 17,
+    attribution: "© OpenStreetMap, SRTM | © OpenTopoMap",
+    crossOrigin: true,
+  });
 
   setBaseLayer(s.layer || "hybrid");
   tempLayer.addTo(map);
@@ -883,8 +888,11 @@ function initMap() {
 function setBaseLayer(name) {
   if (map.hasLayer(layers.street)) map.removeLayer(layers.street);
   if (map.hasLayer(layers.hybrid)) map.removeLayer(layers.hybrid);
+  if (map.hasLayer(layers.topo)) map.removeLayer(layers.topo);
   if (name === "street") {
     layers.street.addTo(map);
+  } else if (name === "topo") {
+    layers.topo.addTo(map);
   } else {
     layers.hybrid.addTo(map);
     name = "hybrid";

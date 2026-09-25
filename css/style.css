@@ -81,10 +81,11 @@ html, body {
   border: none;
   background: transparent;
   color: var(--muted);
-  padding: 8px 10px;
-  font-size: 12px;
+  padding: 8px 8px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
 }
 .layer-toggle button.active {
   background: var(--accent);

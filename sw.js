@@ -1,6 +1,6 @@
 /* MKSI service worker — app shell + runtime tile cache. No push. */
-const CACHE_APP = "mksi-app-v28";
-const CACHE_TILES = "mksi-tiles-v28";
+const CACHE_APP = "mksi-app-v29";
+const CACHE_TILES = "mksi-tiles-v29";
 
 const APP_ASSETS = [
   "./",
@@ -19,6 +19,7 @@ const APP_ASSETS = [
 const TILE_HOSTS = [
   "tile.openstreetmap.org",
   "server.arcgisonline.com",
+  "tile.opentopomap.org",
   "unpkg.com",
   "cdn.jsdelivr.net",
 ];
