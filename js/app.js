@@ -25,7 +25,15 @@ let state = {
   points: [],
   drawings: [],
   shapes: [],
-  settings: { layer: "hybrid", lastLat: 39.92, lastLon: 32.85, lastZoom: 12, chromeHidden: false },
+  settings: {
+    layer: "hybrid",
+    lastLat: 39.92,
+    lastLon: 32.85,
+    lastZoom: 12,
+    chromeHidden: false,
+    hidePointsLayer: false,
+    hideShapesLayer: false,
+  },
 };
 
 let map;
@@ -1245,58 +1253,80 @@ function savePointAt(lat, lon, name) {
   map.setView([lat, lon], Math.max(map.getZoom(), 14));
 }
 
+function isItemVisible(item) {
+  return !item?.hidden;
+}
+
+function syncLayerVisButtons() {
+  const s = state.settings || {};
+  const ptsBtn = $("#btnTogglePtsVis");
+  const shBtn = $("#btnToggleShapesVis");
+  if (ptsBtn) ptsBtn.textContent = s.hidePointsLayer ? "Göster" : "Gizle";
+  if (shBtn) shBtn.textContent = s.hideShapesLayer ? "Göster" : "Gizle";
+}
+
 function renderSaved() {
   savedLayer.clearLayers();
-  for (const p of state.points) {
-    L.circleMarker([p.lat, p.lon], {
-      radius: 7,
-      color: "#e8b84a",
-      fillColor: "#1a2332",
-      fillOpacity: 1,
-      weight: 3,
-    })
-      .addTo(savedLayer)
-      .bindPopup(`<b>${escapeHtml(p.name)}</b><br/>${escapeHtml(p.mgrs || toMgrs(p.lat, p.lon))}`);
-    addMapLabel(
-      savedLayer,
-      p.lat,
-      p.lon,
-      `<span class="name">${escapeHtml(p.name)}</span>`,
-      false
-    );
+  const s = state.settings || {};
+  if (!s.hidePointsLayer) {
+    for (const p of state.points) {
+      if (!isItemVisible(p)) continue;
+      L.circleMarker([p.lat, p.lon], {
+        radius: 7,
+        color: "#e8b84a",
+        fillColor: "#1a2332",
+        fillOpacity: 1,
+        weight: 3,
+      })
+        .addTo(savedLayer)
+        .bindPopup(`<b>${escapeHtml(p.name)}</b><br/>${escapeHtml(p.mgrs || toMgrs(p.lat, p.lon))}`);
+      addMapLabel(
+        savedLayer,
+        p.lat,
+        p.lon,
+        `<span class="name">${escapeHtml(p.name)}</span>`,
+        false
+      );
+    }
   }
-  for (const sh of state.shapes) addShapeToLayer(sh, savedLayer);
-  for (const d of state.drawings) {
-    if (d.strokes?.length) {
-      for (const stroke of d.strokes) {
-        if (stroke?.length) {
-          L.polyline(
-            stroke.map((p) => [p.lat, p.lon]),
-            { ...DRAW_LINE_OPTS, opacity: 0.9 }
-          ).addTo(savedLayer);
+  if (!s.hideShapesLayer) {
+    for (const sh of state.shapes) {
+      if (!isItemVisible(sh)) continue;
+      addShapeToLayer(sh, savedLayer);
+    }
+    for (const d of state.drawings) {
+      if (!isItemVisible(d)) continue;
+      if (d.strokes?.length) {
+        for (const stroke of d.strokes) {
+          if (stroke?.length) {
+            L.polyline(
+              stroke.map((p) => [p.lat, p.lon]),
+              { ...DRAW_LINE_OPTS, opacity: 0.9 }
+            ).addTo(savedLayer);
+          }
         }
-      }
-      if (d.name && d.labelLat != null) {
-        addMapLabel(
-          savedLayer,
-          d.labelLat,
-          d.labelLon,
-          `<span class="name">${escapeHtml(d.name)}</span>`
-        );
-      }
-    } else if (d.pts?.length) {
-      L.polyline(
-        d.pts.map((p) => [p.lat, p.lon]),
-        { ...DRAW_LINE_OPTS, opacity: 0.9 }
-      ).addTo(savedLayer);
-      if (d.name) {
-        const midPt = d.pts[Math.floor(d.pts.length / 2)];
-        addMapLabel(
-          savedLayer,
-          midPt.lat,
-          midPt.lon,
-          `<span class="name">${escapeHtml(d.name)}</span>`
-        );
+        if (d.name && d.labelLat != null) {
+          addMapLabel(
+            savedLayer,
+            d.labelLat,
+            d.labelLon,
+            `<span class="name">${escapeHtml(d.name)}</span>`
+          );
+        }
+      } else if (d.pts?.length) {
+        L.polyline(
+          d.pts.map((p) => [p.lat, p.lon]),
+          { ...DRAW_LINE_OPTS, opacity: 0.9 }
+        ).addTo(savedLayer);
+        if (d.name) {
+          const midPt = d.pts[Math.floor(d.pts.length / 2)];
+          addMapLabel(
+            savedLayer,
+            midPt.lat,
+            midPt.lon,
+            `<span class="name">${escapeHtml(d.name)}</span>`
+          );
+        }
       }
     }
   }
@@ -1383,6 +1413,7 @@ function matchesSearch(text, q) {
 
 function renderLists() {
   const q = menuSearchQuery();
+  syncLayerVisButtons();
   const pl = $("#pointsList");
   const filteredPts = state.points
     .map((p, i) => ({ p, i }))
@@ -1393,18 +1424,20 @@ function renderLists() {
   pl.innerHTML = state.points.length
     ? filteredPts.length
       ? filteredPts
-          .map(
-            ({ p, i }) => `<li>
+          .map(({ p, i }) => {
+            const vis = isItemVisible(p);
+            return `<li class="${vis ? "" : "item-hidden"}">
         <div class="meta" data-go-kind="point" data-go-i="${i}">
           <div class="name">${escapeHtml(p.name)}</div>
           <div class="sub">${escapeHtml(p.mgrs || "")}</div>
         </div>
+        <button type="button" class="btn icon" data-vis-kind="point" data-vis-i="${i}" title="${vis ? "Gizle" : "Göster"}">${vis ? "👁" : "◌"}</button>
         <button type="button" class="btn icon" data-go-kind="point" data-go-i="${i}" title="Git">➤</button>
         <button type="button" class="btn icon" data-route-kind="point" data-route-i="${i}" title="Rota">🧭</button>
         <button type="button" class="btn icon" data-export-kind="point" data-export-i="${i}" title="Dışa aktar">⬇</button>
         <button type="button" class="btn icon danger" data-del-pt="${escapeHtml(p.id)}">🗑</button>
-      </li>`
-          )
+      </li>`;
+          })
           .join("")
       : `<li><div class="meta"><div class="sub">Aramayla eşleşen nokta yok</div></div></li>`
     : `<li><div class="meta"><div class="sub">Kayıtlı nokta yok</div></div></li>`;
@@ -1417,6 +1450,7 @@ function renderLists() {
       sub: s.summary || s.type,
       editable: s.type === "circle" || s.type === "arc" || s.type === "area",
       color: s.color || "",
+      hidden: !!s.hidden,
     })),
     ...state.drawings.map((d, i) => ({
       kind: "draw",
@@ -1425,6 +1459,7 @@ function renderLists() {
       sub: `${d.strokes?.length || 1} çizgi`,
       editable: false,
       color: "",
+      hidden: !!d.hidden,
     })),
   ];
   const filteredItems = items.filter((x) => matchesSearch(`${x.name} ${x.sub}`, q));
@@ -1435,19 +1470,21 @@ function renderLists() {
   sl.innerHTML = items.length
     ? filteredItems.length
       ? filteredItems
-          .map(
-            (x) => `<li>
+          .map((x) => {
+            const vis = !x.hidden;
+            return `<li class="${vis ? "" : "item-hidden"}">
         <div class="meta" data-go-kind="${x.kind}" data-go-i="${x.i}">
           <div class="name">${x.color ? `<span class="swatch-mini" style="background:${escapeHtml(x.color)}"></span>` : ""}${escapeHtml(x.name)}</div>
           <div class="sub">${escapeHtml(x.sub)}</div>
         </div>
+        <button type="button" class="btn icon" data-vis-kind="${x.kind}" data-vis-i="${x.i}" title="${vis ? "Gizle" : "Göster"}">${vis ? "👁" : "◌"}</button>
         <button type="button" class="btn icon" data-go-kind="${x.kind}" data-go-i="${x.i}" title="Git">➤</button>
         <button type="button" class="btn icon" data-route-kind="${x.kind}" data-route-i="${x.i}" title="Rota">🧭</button>
         <button type="button" class="btn icon" data-export-kind="${x.kind}" data-export-i="${x.i}" title="Dışa aktar">⬇</button>
         ${x.editable ? `<button type="button" class="btn icon" data-edit-shape="${x.i}" title="Düzenle">✎</button>` : ""}
         <button type="button" class="btn icon danger" data-del-kind="${x.kind}" data-del-i="${x.i}">🗑</button>
-      </li>`
-          )
+      </li>`;
+          })
           .join("")
       : `<li><div class="meta"><div class="sub">Aramayla eşleşen şekil yok</div></div></li>`
     : `<li><div class="meta"><div class="sub">Kayıtlı şekil yok</div></div></li>`;
@@ -2332,9 +2369,25 @@ function bindUi() {
     await toastDownloadOnly(await downloadJson(filename, exportJson(state, "shapes")), filename);
   });
   $("#menuSearch")?.addEventListener("input", () => renderLists());
-  // summary içindeki dışa aktar tıklanınca accordion kapanmasın
+  // summary içindeki dışa aktar / görünürlük tıklanınca accordion kapanmasın
   $$(".menu-export-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => e.stopPropagation());
+  });
+  $("#btnTogglePtsVis")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    state.settings.hidePointsLayer = !state.settings.hidePointsLayer;
+    persist();
+    renderSaved();
+    toast(state.settings.hidePointsLayer ? "Noktalar gizli" : "Noktalar görünür");
+  });
+  $("#btnToggleShapesVis")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    state.settings.hideShapesLayer = !state.settings.hideShapesLayer;
+    persist();
+    renderSaved();
+    toast(state.settings.hideShapesLayer ? "Şekil/çizimler gizli" : "Şekil/çizimler görünür");
   });
 
   async function applyImportText(text) {
@@ -2372,11 +2425,22 @@ function bindUi() {
 
   $("#pointsList").addEventListener("click", (e) => {
     const del = e.target.closest("[data-del-pt]");
+    const vis = e.target.closest("[data-vis-kind]");
     const route = e.target.closest("[data-route-kind]");
     const exp = e.target.closest("[data-export-kind]");
     const go = e.target.closest("[data-go-kind]");
     if (del) {
       state.points = state.points.filter((x) => x.id !== del.dataset.delPt);
+      persist();
+      renderSaved();
+      return;
+    }
+    if (vis && vis.dataset.visKind === "point") {
+      const i = Number(vis.dataset.visI);
+      const p = state.points[i];
+      if (!p) return;
+      p.hidden = !p.hidden;
+      if (!p.hidden) state.settings.hidePointsLayer = false;
       persist();
       renderSaved();
       return;
@@ -2398,6 +2462,7 @@ function bindUi() {
 
   $("#shapesList").addEventListener("click", (e) => {
     const del = e.target.closest("[data-del-kind]");
+    const vis = e.target.closest("[data-vis-kind]");
     const route = e.target.closest("[data-route-kind]");
     const exp = e.target.closest("[data-export-kind]");
     const go = e.target.closest("[data-go-kind]");
@@ -2406,6 +2471,16 @@ function bindUi() {
       const i = Number(del.dataset.delI);
       if (del.dataset.delKind === "shape") state.shapes.splice(i, 1);
       else state.drawings.splice(i, 1);
+      persist();
+      renderSaved();
+      return;
+    }
+    if (vis) {
+      const i = Number(vis.dataset.visI);
+      const item = vis.dataset.visKind === "shape" ? state.shapes[i] : state.drawings[i];
+      if (!item) return;
+      item.hidden = !item.hidden;
+      if (!item.hidden) state.settings.hideShapesLayer = false;
       persist();
       renderSaved();
       return;
@@ -2469,6 +2544,8 @@ async function registerSw() {
 async function boot() {
   state = await loadState();
   if (!state.settings) state.settings = {};
+  if (state.settings.hidePointsLayer == null) state.settings.hidePointsLayer = false;
+  if (state.settings.hideShapesLayer == null) state.settings.hideShapesLayer = false;
   initMap();
   bindUi();
   applyChromeHidden(!!state.settings.chromeHidden);

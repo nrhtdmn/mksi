@@ -506,10 +506,12 @@ html, body {
 .result-box strong { color: var(--accent-2); }
 
 .list { list-style: none; }
-.list li.active {
-  background: rgba(61, 154, 106, 0.22);
-  border-radius: 8px;
-  outline: 1px solid var(--accent);
+.list li.item-hidden {
+  opacity: 0.45;
+}
+.list li.item-hidden .name {
+  text-decoration: line-through;
+  color: var(--muted);
 }
 #qgSearchResults li.qg-hit {
   cursor: pointer;
