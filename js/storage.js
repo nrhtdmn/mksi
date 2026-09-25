@@ -48,7 +48,6 @@ const defaultState = () => ({
     lastZoom: 12,
     lastBearing: 0,
     chromeHidden: false,
-    overlayTopo: false,
   },
 });
 

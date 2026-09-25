@@ -34,7 +34,6 @@ let state = {
     chromeHidden: false,
     hidePointsLayer: false,
     hideShapesLayer: false,
-    overlayTopo: false,
   },
 };
 
@@ -836,26 +835,13 @@ function initMap() {
     { maxZoom: 19, opacity: 0.85, crossOrigin: true }
   );
   layers.hybrid = L.layerGroup([layers.sat, layers.labels]);
-
-  map.createPane("topoOverlayPane", map.getPane("rotatePane") || undefined);
-  const topoPane = map.getPane("topoOverlayPane");
-  if (topoPane) {
-    topoPane.style.zIndex = 350;
-    topoPane.style.pointerEvents = "none";
-  }
   layers.topo = L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
     maxZoom: 17,
     attribution: "© OpenStreetMap, SRTM | © OpenTopoMap",
     crossOrigin: true,
-    pane: "topoOverlayPane",
-    className: "topo-contour-overlay blend-sat",
-    opacity: 1,
   });
-  layers.topo.on("add", () => syncTopoBlendClass());
 
-  normalizeLayerSettings(s);
-  setBaseLayer(s.layer || "hybrid");
-  setTopoOverlay(!!s.overlayTopo);
+  setBaseLayer(s.layer === "topo" || s.overlayTopo ? "topo" : s.layer || "hybrid");
   tempLayer.addTo(map);
   savedLayer.addTo(map);
 
@@ -899,67 +885,29 @@ function initMap() {
   renderSaved();
 }
 
-function normalizeLayerSettings(s) {
-  if (!s) return;
-  if (s.layer === "topo") {
-    s.layer = "hybrid";
-    s.overlayTopo = true;
-  }
-  if (typeof s.overlayTopo !== "boolean") s.overlayTopo = false;
-  if (s.layer !== "street" && s.layer !== "hybrid") s.layer = "hybrid";
-}
-
 function setBaseLayer(name, opts = {}) {
-  if (name === "topo") {
-    name = "hybrid";
-    setTopoOverlay(true);
-  }
   if (map.hasLayer(layers.street)) map.removeLayer(layers.street);
   if (map.hasLayer(layers.hybrid)) map.removeLayer(layers.hybrid);
+  if (map.hasLayer(layers.topo)) map.removeLayer(layers.topo);
   if (name === "street") {
     layers.street.addTo(map);
+  } else if (name === "topo") {
+    layers.topo.addTo(map);
   } else {
     layers.hybrid.addTo(map);
     name = "hybrid";
   }
   state.settings.layer = name;
-  syncTopoBlendClass();
-  syncLayerUi();
+  state.settings.overlayTopo = false;
+  syncLayerUi(name);
   persist();
   if (opts.close) closeSheets();
 }
 
-function setTopoOverlay(on) {
-  state.settings.overlayTopo = !!on;
-  if (!map || !layers.topo) return;
-  const has = map.hasLayer(layers.topo);
-  if (on && !has) layers.topo.addTo(map);
-  if (!on && has) map.removeLayer(layers.topo);
-  syncTopoBlendClass();
-  syncLayerUi();
-  persist();
-}
-
-function syncTopoBlendClass() {
-  if (!layers.topo) return;
-  const el = layers.topo.getContainer?.();
-  if (!el) return;
-  const sat = state.settings.layer !== "street";
-  el.classList.toggle("blend-sat", sat);
-  el.classList.toggle("blend-map", !sat);
-}
-
-function syncLayerUi() {
-  const base = state.settings.layer === "street" ? "street" : "hybrid";
+function syncLayerUi(name = state.settings.layer) {
   $$("#layerList .layer-item").forEach((b) =>
-    b.classList.toggle("active", b.dataset.layer === base)
+    b.classList.toggle("active", b.dataset.layer === name)
   );
-  const ov = $("#btnOverlayTopo");
-  if (ov) {
-    const on = !!state.settings.overlayTopo;
-    ov.classList.toggle("active", on);
-    ov.setAttribute("aria-pressed", on ? "true" : "false");
-  }
 }
 
 function onMapClick(e) {
@@ -2256,11 +2204,8 @@ function bindUi() {
   $$(".close-sheet").forEach((b) => b.addEventListener("click", closeSheets));
 
   $$("#layerList .layer-item").forEach((b) =>
-    b.addEventListener("click", () => setBaseLayer(b.dataset.layer))
+    b.addEventListener("click", () => setBaseLayer(b.dataset.layer, { close: true }))
   );
-  $("#btnOverlayTopo")?.addEventListener("click", () => {
-    setTopoOverlay(!state.settings.overlayTopo);
-  });
 
   $$("#toolbar .btn").forEach((b) =>
     b.addEventListener("click", () => {
@@ -2751,7 +2696,6 @@ async function boot() {
   if (!state.settings) state.settings = {};
   if (state.settings.hidePointsLayer == null) state.settings.hidePointsLayer = false;
   if (state.settings.hideShapesLayer == null) state.settings.hideShapesLayer = false;
-  normalizeLayerSettings(state.settings);
   initMap();
   bindUi();
   applyChromeHidden(!!state.settings.chromeHidden);
