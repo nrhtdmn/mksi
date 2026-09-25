@@ -41,7 +41,14 @@ const defaultState = () => ({
   points: [],
   drawings: [],
   shapes: [],
-  settings: { layer: "hybrid", lastLat: 39.92, lastLon: 32.85, lastZoom: 12, chromeHidden: false },
+  settings: {
+    layer: "hybrid",
+    lastLat: 39.92,
+    lastLon: 32.85,
+    lastZoom: 12,
+    lastBearing: 0,
+    chromeHidden: false,
+  },
 });
 
 export async function loadState() {

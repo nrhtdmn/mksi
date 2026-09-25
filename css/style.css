@@ -250,6 +250,70 @@ html, body {
 }
 .go-fab:active { transform: scale(0.96); }
 
+.north-fab,
+.shot-fab {
+  position: absolute;
+  left: 12px;
+  z-index: 1200;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+}
+.north-fab {
+  bottom: calc(260px + var(--safe-bottom));
+}
+.shot-fab {
+  bottom: calc(200px + var(--safe-bottom));
+  font-size: 20px;
+}
+.north-needle {
+  font-size: 16px;
+  line-height: 1;
+  color: #d64545;
+  display: block;
+  transition: transform 0.15s linear;
+}
+.north-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--accent-2);
+  line-height: 1;
+  margin-top: 1px;
+}
+
+body.screenshot-mode .topbar,
+body.screenshot-mode .info-strip,
+body.screenshot-mode .toolbar,
+body.screenshot-mode .locate-fab,
+body.screenshot-mode .go-fab,
+body.screenshot-mode .north-fab,
+body.screenshot-mode .shot-fab,
+body.screenshot-mode .chrome-fab,
+body.screenshot-mode .center-fab,
+body.screenshot-mode .crosshair,
+body.screenshot-mode .draw-bar,
+body.screenshot-mode .mode-banner,
+body.screenshot-mode .sheet,
+body.screenshot-mode .sheet-backdrop,
+body.screenshot-mode .toast,
+body.screenshot-mode .leaflet-control-zoom,
+body.screenshot-mode .leaflet-control-attribution {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 .top-chrome-btn {
   min-height: 36px;
   padding: 6px 10px;
@@ -278,9 +342,17 @@ html, body {
   bottom: calc(68px + var(--safe-bottom));
   right: 12px;
 }
+#app.chrome-hidden .shot-fab {
+  bottom: calc(12px + var(--safe-bottom));
+  left: 12px;
+}
+#app.chrome-hidden .north-fab {
+  bottom: calc(68px + var(--safe-bottom));
+  left: 12px;
+}
 /* İz / kalem çubuğu: en altta, konumun solunda */
 #app.chrome-hidden .draw-bar {
-  left: 12px;
+  left: 68px;
   right: 68px;
   bottom: calc(12px + var(--safe-bottom));
   transform: none;

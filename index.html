@@ -38,6 +38,11 @@
       <button type="button" class="center-fab" id="btnCenterAction" title="Merkez">◎</button>
     </div>
     <div class="mode-banner" id="modeBanner"></div>
+    <button type="button" class="north-fab" id="btnNorth" title="Kuzeye dön (iki parmak: döndür)" aria-label="Kuzey">
+      <span class="north-needle" id="northNeedle">⬆</span>
+      <span class="north-label">K</span>
+    </button>
+    <button type="button" class="shot-fab" id="btnScreenshot" title="Ekran görüntüsü" aria-label="Ekran görüntüsü">📷</button>
     <button type="button" class="go-fab" id="btnQuickGo" title="Hızlı ekle / ara" aria-label="Ekle veya ara">＋</button>
     <button type="button" class="locate-fab" id="btnLocate" title="Konumu ortala" aria-label="Konum">⌖</button>
 
@@ -532,7 +537,9 @@
   <div class="toast" id="toast"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate.js" crossorigin=""></script>
   <script src="https://cdn.jsdelivr.net/npm/mgrs@2.0.0/dist/mgrs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

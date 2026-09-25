@@ -30,6 +30,7 @@ let state = {
     lastLat: 39.92,
     lastLon: 32.85,
     lastZoom: 12,
+    lastBearing: 0,
     chromeHidden: false,
     hidePointsLayer: false,
     hideShapesLayer: false,
@@ -564,8 +565,121 @@ function persist() {
     state.settings.lastLat = c.lat;
     state.settings.lastLon = c.lng;
     state.settings.lastZoom = map.getZoom();
+    if (typeof map.getBearing === "function") {
+      state.settings.lastBearing = map.getBearing();
+    }
   }
   return saveState(state);
+}
+
+function syncNorthNeedle() {
+  const needle = $("#northNeedle");
+  if (!needle || !map || typeof map.getBearing !== "function") return;
+  needle.style.transform = `rotate(${-(map.getBearing() || 0)}deg)`;
+}
+
+function resetNorth() {
+  if (!map || typeof map.setBearing !== "function") return;
+  map.setBearing(0);
+  syncNorthNeedle();
+  persist();
+  toast("Kuzey");
+}
+
+async function takeScreenshot() {
+  if (typeof html2canvas !== "function") {
+    toast("Ekran görüntüsü yüklenemedi");
+    return;
+  }
+  document.body.classList.add("screenshot-mode");
+  try {
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    await new Promise((r) => setTimeout(r, 100));
+    const el = $("#mapWrap");
+    const canvas = await html2canvas(el, {
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: "#0f1419",
+      logging: false,
+      scale: Math.min(2, window.devicePixelRatio || 1),
+      ignoreElements: (node) =>
+        node.classList?.contains("sheet") ||
+        node.classList?.contains("sheet-backdrop") ||
+        node.classList?.contains("toast"),
+    });
+    const a = document.createElement("a");
+    a.href = canvas.toDataURL("image/png");
+    a.download = `MKSI_${dateStamp()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    toast("Görüntü kaydedildi");
+  } catch (err) {
+    console.error(err);
+    toast("Görüntü alınamadı");
+  } finally {
+    document.body.classList.remove("screenshot-mode");
+  }
+}
+
+let rotatePersistTimer = null;
+let northDrag = null;
+let northDidDrag = false;
+
+function bindNorthDrag() {
+  const btn = $("#btnNorth");
+  if (!btn) return;
+
+  const onMove = (e) => {
+    if (!northDrag || !map || typeof map.setBearing !== "function") return;
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+    const dx = clientX - northDrag.x;
+    const dy = clientY - northDrag.y;
+    if (!northDrag.moved && Math.hypot(dx, dy) < 6) return;
+    northDrag.moved = true;
+    northDidDrag = true;
+    // Yatay + dikey sürükleme haritayı döndürür
+    const delta = dx + dy;
+    map.setBearing(northDrag.startBearing + delta * 0.45);
+    e.preventDefault?.();
+  };
+
+  const onUp = () => {
+    if (!northDrag) return;
+    if (northDrag.moved) persist();
+    northDrag = null;
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onUp);
+  };
+
+  btn.addEventListener("pointerdown", (e) => {
+    if (!map || typeof map.getBearing !== "function") return;
+    if (e.button != null && e.button !== 0) return;
+    northDidDrag = false;
+    northDrag = {
+      x: e.clientX,
+      y: e.clientY,
+      startBearing: map.getBearing() || 0,
+      moved: false,
+    };
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  });
+
+  btn.addEventListener(
+    "click",
+    (e) => {
+      if (northDidDrag) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        northDidDrag = false;
+      }
+    },
+    true
+  );
 }
 
 function askName(defaultName, cb) {
@@ -694,22 +808,31 @@ function initMap() {
   tempLayer = L.layerGroup();
   savedLayer = L.layerGroup();
 
-  map = L.map("map", { zoomControl: true, maxZoom: 19 }).setView(
-    [s.lastLat ?? 39.92, s.lastLon ?? 32.85],
-    s.lastZoom ?? 12
-  );
+  map = L.map("map", {
+    zoomControl: true,
+    maxZoom: 19,
+    zoomSnap: 0.25,
+    zoomDelta: 0.25,
+    wheelPxPerZoomLevel: 90,
+    rotate: true,
+    bearing: s.lastBearing || 0,
+    touchRotate: true,
+    shiftKeyRotate: true,
+    rotateControl: false,
+  }).setView([s.lastLat ?? 39.92, s.lastLon ?? 32.85], s.lastZoom ?? 12);
 
   layers.street = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: "© OpenStreetMap",
+    crossOrigin: true,
   });
   layers.sat = L.tileLayer(
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    { maxZoom: 19, attribution: "© Esri" }
+    { maxZoom: 19, attribution: "© Esri", crossOrigin: true }
   );
   layers.labels = L.tileLayer(
     "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-    { maxZoom: 19, opacity: 0.85 }
+    { maxZoom: 19, opacity: 0.85, crossOrigin: true }
   );
   layers.hybrid = L.layerGroup([layers.sat, layers.labels]);
 
@@ -729,6 +852,12 @@ function initMap() {
     updateInfo(c.lat, c.lng, { fromMap: true });
     persist();
   });
+  map.on("rotate", () => {
+    syncNorthNeedle();
+    clearTimeout(rotatePersistTimer);
+    rotatePersistTimer = setTimeout(() => persist(), 400);
+  });
+  syncNorthNeedle();
   map.on("click", onMapClick);
   map.on("dblclick", (e) => {
     if (activeTool === "area" && areaPts.length >= 3) {
@@ -967,7 +1096,7 @@ function onDrawStart(e) {
   if (e.pointerType === "mouse" && e.button !== 0) return;
   if (
     e.target.closest?.(
-      ".leaflet-control, .draw-bar, .toolbar, .topbar, .locate-fab, .go-fab, .center-fab, button, .sheet, .sheet-backdrop"
+      ".leaflet-control, .draw-bar, .toolbar, .topbar, .locate-fab, .go-fab, .north-fab, .shot-fab, .center-fab, button, .sheet, .sheet-backdrop"
     )
   ) {
     return;
@@ -2017,6 +2146,9 @@ function mergeById(a, b) {
 function bindUi() {
   $("#btnLocate").addEventListener("click", goToLocation);
   $("#btnQuickGo")?.addEventListener("click", openQuickGoSheet);
+  $("#btnNorth")?.addEventListener("click", resetNorth);
+  $("#btnScreenshot")?.addEventListener("click", takeScreenshot);
+  bindNorthDrag();
   $("#btnChromeToggle").addEventListener("click", toggleChrome);
   $("#btnCenterAction")?.addEventListener("click", onCenterAction);
 
