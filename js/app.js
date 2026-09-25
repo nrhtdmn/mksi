@@ -592,31 +592,80 @@ async function takeScreenshot() {
     return;
   }
   document.body.classList.add("screenshot-mode");
+  toast("Yüksek kalite hazırlanıyor…");
   try {
+    if (map) {
+      map.invalidateSize(false);
+      // Döndürme / zoom sonrası karoları netleştir
+      if (typeof map.setBearing === "function") {
+        map.setBearing(map.getBearing());
+      }
+    }
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 220));
+
     const el = $("#mapWrap");
+    const dpr = window.devicePixelRatio || 1;
+    // Mümkün olan en yüksek çözünürlük (mobilde bellek için üst sınır 4)
+    const scale = Math.min(4, Math.max(3, Math.ceil(dpr * 2)));
+
     const canvas = await html2canvas(el, {
       useCORS: true,
-      allowTaint: true,
+      allowTaint: false,
       backgroundColor: "#0f1419",
       logging: false,
-      scale: Math.min(2, window.devicePixelRatio || 1),
+      scale,
+      imageTimeout: 20000,
+      removeContainer: true,
+      foreignObjectRendering: false,
       ignoreElements: (node) =>
         node.classList?.contains("sheet") ||
         node.classList?.contains("sheet-backdrop") ||
         node.classList?.contains("toast"),
     });
+
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("PNG oluşturulamadı"))),
+        "image/png"
+      );
+    });
+
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = canvas.toDataURL("image/png");
-    a.download = `MKSI_${dateStamp()}.png`;
+    a.href = url;
+    a.download = `MKSI_${dateStamp()}_${canvas.width}x${canvas.height}.png`;
     document.body.appendChild(a);
     a.click();
     a.remove();
-    toast("Görüntü kaydedildi");
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast(`Kaydedildi (${canvas.width}×${canvas.height})`);
   } catch (err) {
     console.error(err);
-    toast("Görüntü alınamadı");
+    // CORS engeli olursa tainted canvas ile dene
+    try {
+      const el = $("#mapWrap");
+      const dpr = window.devicePixelRatio || 1;
+      const scale = Math.min(4, Math.max(3, Math.ceil(dpr * 2)));
+      const canvas = await html2canvas(el, {
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: "#0f1419",
+        logging: false,
+        scale,
+        imageTimeout: 20000,
+      });
+      const a = document.createElement("a");
+      a.href = canvas.toDataURL("image/png");
+      a.download = `MKSI_${dateStamp()}_${canvas.width}x${canvas.height}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast(`Kaydedildi (${canvas.width}×${canvas.height})`);
+    } catch (err2) {
+      console.error(err2);
+      toast("Görüntü alınamadı");
+    }
   } finally {
     document.body.classList.remove("screenshot-mode");
   }
