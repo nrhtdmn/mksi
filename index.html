@@ -12,6 +12,7 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>MKSI Harita</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -27,12 +28,17 @@
 
     <div id="mapWrap" class="map-wrap">
       <div id="map"></div>
+      <div id="map3d" class="map3d" hidden></div>
       <div class="crosshair" id="crosshair" aria-hidden="true">
         <span class="ch-h"></span>
         <span class="ch-v"></span>
         <span class="ch-dot"></span>
       </div>
       <button type="button" class="center-fab" id="btnCenterAction" title="Merkez">◎</button>
+      <div class="pitch-fabs" id="pitchFabs" hidden>
+        <button type="button" class="pitch-fab" id="btnPitchUp" title="Daha eğik" aria-label="Eğimi artır">︽</button>
+        <button type="button" class="pitch-fab" id="btnPitchDown" title="Daha düz" aria-label="Eğimi azalt">︾</button>
+      </div>
     </div>
     <div class="mode-banner" id="modeBanner"></div>
     <button type="button" class="north-fab" id="btnNorth" title="Kuzeye dön (iki parmak: döndür)" aria-label="Kuzey">
@@ -101,6 +107,12 @@
           <span class="layer-item-desc">Eşyükselti eğrileri</span>
         </button>
       </div>
+
+      <p class="layer-section-label">Görünüm</p>
+      <button type="button" class="layer-item" id="btnView3d" aria-pressed="false">
+        <span class="layer-item-title">3D arazi</span>
+        <span class="layer-item-desc">Eğimli görünüm + yükseklik kabartması</span>
+      </button>
     </div>
   </div>
 
@@ -564,6 +576,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate.js" crossorigin=""></script>
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin=""></script>
   <script src="https://cdn.jsdelivr.net/npm/mgrs@2.0.0/dist/mgrs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script type="module" src="js/app.js"></script>

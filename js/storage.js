@@ -47,6 +47,8 @@ const defaultState = () => ({
     lastLon: 32.85,
     lastZoom: 12,
     lastBearing: 0,
+    lastPitch: 60,
+    view3d: false,
     chromeHidden: false,
   },
 });
