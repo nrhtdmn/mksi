@@ -994,13 +994,13 @@ async function stampBrandOnCanvas(sourceCanvas) {
   ctx.globalAlpha = 0.85;
   ctx.fillStyle = "#f2f5f8";
   ctx.textAlign = "left";
-  ctx.font = `800 ${Math.max(18, 16 * scale)}px system-ui, sans-serif`;
+  ctx.font = `700 ${Math.max(12, 11 * scale)}px system-ui, sans-serif`;
   const textX = pad + logoSize + 8 * scale;
-  const line = Math.max(20, 18 * scale);
+  const line = Math.max(14, 13 * scale);
   ctx.shadowColor = "rgba(0,0,0,0.85)";
   ctx.shadowBlur = 3 * scale;
-  ctx.fillText("N", textX, out.height - pad - line);
-  ctx.fillText("D", textX, out.height - pad);
+  ctx.fillText("NURHAT", textX, out.height - pad - line);
+  ctx.fillText("DUMAN", textX, out.height - pad);
   ctx.shadowBlur = 0;
   ctx.globalAlpha = 1;
   return out;
