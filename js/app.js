@@ -968,7 +968,7 @@ function loadBrandImage() {
     img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
     img.onerror = reject;
-    img.src = "icons/nd-logo.png";
+    img.src = "icons/nd-logo.png?v=2";
   });
 }
 
