@@ -278,10 +278,10 @@ html, body {
 }
 .go-fab:active { transform: scale(0.96); }
 
-.north-fab,
-.shot-fab {
+.north-fab {
   position: absolute;
   left: 12px;
+  bottom: calc(200px + var(--safe-bottom));
   z-index: 1200;
   width: 48px;
   height: 48px;
@@ -297,13 +297,6 @@ html, body {
   justify-content: center;
   gap: 0;
   padding: 0;
-}
-.north-fab {
-  bottom: calc(260px + var(--safe-bottom));
-}
-.shot-fab {
-  bottom: calc(200px + var(--safe-bottom));
-  font-size: 20px;
 }
 .north-needle {
   font-size: 16px;
@@ -326,7 +319,6 @@ body.screenshot-mode .toolbar,
 body.screenshot-mode .locate-fab,
 body.screenshot-mode .go-fab,
 body.screenshot-mode .north-fab,
-body.screenshot-mode .shot-fab,
 body.screenshot-mode .chrome-fab,
 body.screenshot-mode .center-fab,
 body.screenshot-mode .pitch-fabs,
@@ -337,18 +329,30 @@ body.screenshot-mode .sheet,
 body.screenshot-mode .sheet-backdrop,
 body.screenshot-mode .toast,
 body.screenshot-mode .leaflet-control-zoom,
-body.screenshot-mode .leaflet-control-attribution {
+body.screenshot-mode .leaflet-control-attribution,
+body.screenshot-mode .maplibregl-ctrl {
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
 }
 
+.top-icon-btn,
 .top-layers-btn,
 .top-chrome-btn {
   min-height: 36px;
   padding: 6px 10px;
   font-size: 12px;
   flex-shrink: 0;
+}
+.top-icon-btn {
+  min-width: 36px;
+  padding: 6px 8px;
+  font-weight: 800;
+}
+.top-icon-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
 
 .layer-list {
@@ -407,12 +411,8 @@ body.screenshot-mode .leaflet-control-attribution {
   bottom: calc(68px + var(--safe-bottom));
   right: 12px;
 }
-#app.chrome-hidden .shot-fab {
-  bottom: calc(12px + var(--safe-bottom));
-  left: 12px;
-}
 #app.chrome-hidden .north-fab {
-  bottom: calc(68px + var(--safe-bottom));
+  bottom: calc(12px + var(--safe-bottom));
   left: 12px;
 }
 /* İz / kalem çubuğu: en altta, konumun solunda */

@@ -1342,12 +1342,13 @@ function syncLayerUi(name = state.settings.layer) {
   $$("#layerList .layer-item").forEach((b) =>
     b.classList.toggle("active", b.dataset.layer === name)
   );
-  const v3 = $("#btnView3d");
-  if (v3) {
-    const on = !!state.settings.view3d;
-    v3.classList.toggle("active", on);
-    v3.setAttribute("aria-pressed", on ? "true" : "false");
-  }
+  const on = !!state.settings.view3d;
+  ["#btnView3d", "#btnView3dTop"].forEach((sel) => {
+    const el = $(sel);
+    if (!el) return;
+    el.classList.toggle("active", on);
+    el.setAttribute("aria-pressed", on ? "true" : "false");
+  });
 }
 
 function onMapClick(e) {
@@ -1550,7 +1551,7 @@ function onDrawStart(e) {
   if (e.pointerType === "mouse" && e.button !== 0) return;
   if (
     e.target.closest?.(
-      ".leaflet-control, .draw-bar, .toolbar, .topbar, .locate-fab, .go-fab, .north-fab, .shot-fab, .center-fab, button, .sheet, .sheet-backdrop"
+      ".leaflet-control, .draw-bar, .toolbar, .topbar, .locate-fab, .go-fab, .north-fab, .center-fab, button, .sheet, .sheet-backdrop"
     )
   ) {
     return;
@@ -2673,6 +2674,9 @@ function bindUi() {
     b.addEventListener("click", () => setBaseLayer(b.dataset.layer, { close: true }))
   );
   $("#btnView3d")?.addEventListener("click", () => {
+    setView3d(!state.settings.view3d);
+  });
+  $("#btnView3dTop")?.addEventListener("click", () => {
     setView3d(!state.settings.view3d);
   });
   $("#btnPitchUp")?.addEventListener("click", () => nudgePitch(8));
