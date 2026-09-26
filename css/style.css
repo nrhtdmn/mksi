@@ -136,14 +136,17 @@ html, body {
 }
 
 .pitch-fabs {
+  display: none;
   position: absolute;
   left: 12px;
   top: 50%;
   transform: translateY(-50%);
   z-index: 1200;
-  display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.map-wrap.view-3d .pitch-fabs:not([hidden]) {
+  display: flex;
 }
 .pitch-fab {
   width: 40px;
@@ -280,8 +283,10 @@ html, body {
 
 .north-fab {
   position: absolute;
-  left: 12px;
-  bottom: calc(200px + var(--safe-bottom));
+  top: 12px;
+  right: 12px;
+  left: auto;
+  bottom: auto;
   z-index: 1200;
   width: 48px;
   height: 48px;
@@ -297,6 +302,46 @@ html, body {
   justify-content: center;
   gap: 0;
   padding: 0;
+}
+/* 3D’de MapLibre navigasyon kontrolünün altında */
+.map-wrap.view-3d .north-fab {
+  top: 108px;
+  right: 12px;
+}
+
+.brand-mark {
+  position: absolute;
+  left: 10px;
+  bottom: calc(10px + var(--safe-bottom));
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  opacity: 0.42;
+  transition: opacity 0.2s ease;
+  pointer-events: auto;
+  max-width: min(220px, 55vw);
+}
+.brand-mark:hover,
+.brand-mark:focus-visible {
+  opacity: 0.78;
+}
+.brand-mark img {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+  flex-shrink: 0;
+}
+.brand-mark-text {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #f2f5f8;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  line-height: 1.2;
 }
 .north-needle {
   font-size: 16px;
@@ -322,6 +367,7 @@ body.screenshot-mode .north-fab,
 body.screenshot-mode .chrome-fab,
 body.screenshot-mode .center-fab,
 body.screenshot-mode .pitch-fabs,
+body.screenshot-mode .brand-mark,
 body.screenshot-mode .crosshair,
 body.screenshot-mode .draw-bar,
 body.screenshot-mode .mode-banner,
@@ -411,9 +457,17 @@ body.screenshot-mode .maplibregl-ctrl {
   bottom: calc(68px + var(--safe-bottom));
   right: 12px;
 }
+#app.chrome-hidden .brand-mark {
+  bottom: calc(10px + var(--safe-bottom));
+}
 #app.chrome-hidden .north-fab {
-  bottom: calc(12px + var(--safe-bottom));
-  left: 12px;
+  top: 12px;
+  right: 12px;
+  bottom: auto;
+  left: auto;
+}
+#app.chrome-hidden .map-wrap.view-3d .north-fab {
+  top: 108px;
 }
 /* İz / kalem çubuğu: en altta, konumun solunda */
 #app.chrome-hidden .draw-bar {

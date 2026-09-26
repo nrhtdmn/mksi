@@ -1,6 +1,6 @@
 /* MKSI service worker — app shell + runtime tile cache. No push. */
-const CACHE_APP = "mksi-app-v37";
-const CACHE_TILES = "mksi-tiles-v37";
+const CACHE_APP = "mksi-app-v38";
+const CACHE_TILES = "mksi-tiles-v38";
 
 const APP_ASSETS = [
   "./",
@@ -14,6 +14,7 @@ const APP_ASSETS = [
   "./icons/icon.svg",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
+  "./icons/nd-logo.png",
 ];
 
 const TILE_HOSTS = [
