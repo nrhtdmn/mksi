@@ -742,6 +742,114 @@ function build3dStyle(layerName) {
   };
 }
 
+function circleRingLonLat(lat, lon, radiusM, steps = 64) {
+  const coords = [];
+  for (let i = 0; i <= steps; i++) {
+    const mil = (i / steps) * 6400;
+    const p = destination(lat, lon, mil, radiusM);
+    coords.push([p.lon, p.lat]);
+  }
+  return coords;
+}
+
+function buildOverlayCollections() {
+  const lines = [];
+  const fills = [];
+  const s = state.settings || {};
+
+  const pushLine = (pts, color, width = 3) => {
+    if (!pts || pts.length < 2) return;
+    lines.push({
+      type: "Feature",
+      properties: { color: color || "#e8b84a", width },
+      geometry: {
+        type: "LineString",
+        coordinates: pts.map((p) => [p.lon, p.lat]),
+      },
+    });
+  };
+  const pushFill = (pts, color) => {
+    if (!pts || pts.length < 3) return;
+    const ring = pts.map((p) => [p.lon, p.lat]);
+    const first = ring[0];
+    const last = ring[ring.length - 1];
+    if (first[0] !== last[0] || first[1] !== last[1]) ring.push([...first]);
+    fills.push({
+      type: "Feature",
+      properties: { color: color || "#4a9fd4" },
+      geometry: { type: "Polygon", coordinates: [ring] },
+    });
+  };
+
+  if (!s.hideShapesLayer) {
+    for (const sh of state.shapes) {
+      if (!isItemVisible(sh)) continue;
+      const color = sh.color || "#4a9fd4";
+      if (sh.type === "circle" && sh.center && sh.radius) {
+        fills.push({
+          type: "Feature",
+          properties: { color: color || "#3d9a6a" },
+          geometry: {
+            type: "Polygon",
+            coordinates: [circleRingLonLat(sh.center.lat, sh.center.lon, sh.radius)],
+          },
+        });
+        pushLine(
+          [
+            { lat: sh.center.lat, lon: sh.center.lon },
+            destination(sh.center.lat, sh.center.lon, 1600, sh.radius),
+          ],
+          color || "#3d9a6a",
+          2
+        );
+      } else if (sh.type === "area" || sh.type === "parsel") {
+        pushFill(sh.pts, color);
+      } else if (sh.type === "arc" && sh.pts?.length) {
+        pushLine(sh.pts, color || "#e8b84a", 3);
+      } else if (sh.pts?.length >= 2) {
+        pushLine(sh.pts, color || (sh.type === "track" ? "#e85d4a" : "#3d9a6a"), sh.type === "track" ? 4 : 3);
+      }
+    }
+    for (const d of state.drawings) {
+      if (!isItemVisible(d)) continue;
+      const strokes = d.strokes?.length ? d.strokes : d.pts ? [d.pts] : [];
+      for (const stroke of strokes) pushLine(stroke, "#e8b84a", 3);
+    }
+  }
+
+  // Anlık (henüz kaydedilmemiş) çizim / iz / bekleyen şekil — fotoğrafta da görünsün
+  if (drawStrokes?.length) {
+    for (const stroke of drawStrokes) pushLine(stroke, "#e8b84a", 3);
+  }
+  if (drawStrokePts?.length >= 2) pushLine(drawStrokePts, "#e8b84a", 3);
+  if (tracking && trackPts?.length >= 2) pushLine(trackPts, "#e85d4a", 4);
+  if (pendingShape) {
+    const sh = pendingShape;
+    const color = sh.color || "#4a9fd4";
+    if (sh.type === "circle" && sh.center && sh.radius) {
+      fills.push({
+        type: "Feature",
+        properties: { color },
+        geometry: {
+          type: "Polygon",
+          coordinates: [circleRingLonLat(sh.center.lat, sh.center.lon, sh.radius)],
+        },
+      });
+    } else if (sh.type === "area" || sh.type === "parsel") {
+      pushFill(sh.pts, color);
+    } else if (sh.pts?.length >= 2) {
+      pushLine(sh.pts, color, sh.type === "track" ? 4 : 3);
+    }
+  }
+  if (areaPts?.length >= 2) pushLine(areaPts, "#4a9fd4", 2);
+  if (measurePts?.length >= 2) pushLine(measurePts, "#e8b84a", 2);
+
+  return {
+    lines: { type: "FeatureCollection", features: lines },
+    fills: { type: "FeatureCollection", features: fills },
+  };
+}
+
 function sync3dPoints() {
   if (!map3d || !map3d.getSource("mksi-points")) return;
   const s = state.settings || {};
@@ -758,12 +866,66 @@ function sync3dPoints() {
   map3d.getSource("mksi-points").setData({ type: "FeatureCollection", features });
 }
 
+function sync3dOverlays() {
+  if (!map3d) return;
+  const { lines, fills } = buildOverlayCollections();
+  if (map3d.getSource("mksi-lines")) map3d.getSource("mksi-lines").setData(lines);
+  if (map3d.getSource("mksi-fills")) map3d.getSource("mksi-fills").setData(fills);
+  sync3dPoints();
+}
+
 function ensure3dPointLayers() {
   if (!map3d) return;
+  if (!map3d.getSource("mksi-fills")) {
+    map3d.addSource("mksi-fills", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+  if (!map3d.getSource("mksi-lines")) {
+    map3d.addSource("mksi-lines", {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
   if (!map3d.getSource("mksi-points")) {
     map3d.addSource("mksi-points", {
       type: "geojson",
       data: { type: "FeatureCollection", features: [] },
+    });
+  }
+  if (!map3d.getLayer("mksi-fills-fill")) {
+    map3d.addLayer({
+      id: "mksi-fills-fill",
+      type: "fill",
+      source: "mksi-fills",
+      paint: {
+        "fill-color": ["coalesce", ["get", "color"], "#4a9fd4"],
+        "fill-opacity": 0.28,
+      },
+    });
+  }
+  if (!map3d.getLayer("mksi-fills-outline")) {
+    map3d.addLayer({
+      id: "mksi-fills-outline",
+      type: "line",
+      source: "mksi-fills",
+      paint: {
+        "line-color": ["coalesce", ["get", "color"], "#4a9fd4"],
+        "line-width": 2.5,
+      },
+    });
+  }
+  if (!map3d.getLayer("mksi-lines-line")) {
+    map3d.addLayer({
+      id: "mksi-lines-line",
+      type: "line",
+      source: "mksi-lines",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": ["coalesce", ["get", "color"], "#e8b84a"],
+        "line-width": ["coalesce", ["get", "width"], 3],
+      },
     });
   }
   if (!map3d.getLayer("mksi-points-circle")) {
@@ -797,7 +959,68 @@ function ensure3dPointLayers() {
       },
     });
   }
-  sync3dPoints();
+  sync3dOverlays();
+}
+
+function loadBrandImage() {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = "icons/nd-logo.png";
+  });
+}
+
+async function stampBrandOnCanvas(sourceCanvas) {
+  const out = document.createElement("canvas");
+  out.width = sourceCanvas.width;
+  out.height = sourceCanvas.height;
+  const ctx = out.getContext("2d");
+  ctx.drawImage(sourceCanvas, 0, 0);
+
+  const wrap = $("#mapWrap");
+  const cssW = wrap?.clientWidth || sourceCanvas.width;
+  const scale = sourceCanvas.width / cssW;
+  const logoSize = 52 * scale;
+  const pad = 10 * scale;
+
+  try {
+    const img = await loadBrandImage();
+    ctx.globalAlpha = 0.72;
+    ctx.drawImage(img, pad, out.height - pad - logoSize, logoSize, logoSize);
+  } catch (_) {}
+
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = "#f2f5f8";
+  ctx.textAlign = "left";
+  ctx.font = `700 ${Math.max(12, 11 * scale)}px system-ui, sans-serif`;
+  const textX = pad + logoSize + 8 * scale;
+  const line = Math.max(14, 13 * scale);
+  ctx.shadowColor = "rgba(0,0,0,0.85)";
+  ctx.shadowBlur = 3 * scale;
+  ctx.fillText("NURHAT", textX, out.height - pad - line);
+  ctx.fillText("DUMAN", textX, out.height - pad);
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+  return out;
+}
+
+async function downloadCanvasPng(canvas, filename) {
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error("PNG oluşturulamadı"))),
+      "image/png"
+    );
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
 function enable3dView() {
@@ -951,19 +1174,19 @@ function resetNorth() {
 async function takeScreenshot() {
   document.body.classList.add("screenshot-mode");
   toast("Yüksek kalite hazırlanıyor…");
+  let savedBearing = null;
   try {
     if (view3dActive()) {
+      sync3dOverlays();
       map3d.resize();
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-      await new Promise((r) => setTimeout(r, 180));
-      const canvas = map3d.getCanvas();
-      const a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png");
-      a.download = `MKSI_3D_${dateStamp()}_${canvas.width}x${canvas.height}.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      toast(`Kaydedildi (${canvas.width}×${canvas.height})`);
+      await new Promise((r) => setTimeout(r, 220));
+      const stamped = await stampBrandOnCanvas(map3d.getCanvas());
+      await downloadCanvasPng(
+        stamped,
+        `MKSI_3D_${dateStamp()}_${stamped.width}x${stamped.height}.png`
+      );
+      toast(`Kaydedildi (${stamped.width}×${stamped.height})`);
       return;
     }
 
@@ -973,12 +1196,17 @@ async function takeScreenshot() {
     }
     if (map) {
       map.invalidateSize(false);
-      if (typeof map.setBearing === "function") {
-        map.setBearing(map.getBearing());
+      // leaflet-rotate + html2canvas: şekiller için geçici kuzey
+      if (typeof map.getBearing === "function") {
+        savedBearing = map.getBearing() || 0;
+        if (Math.abs(savedBearing) > 0.2) {
+          map.setBearing(0);
+          await new Promise((r) => setTimeout(r, 120));
+        }
       }
     }
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    await new Promise((r) => setTimeout(r, 220));
+    await new Promise((r) => setTimeout(r, 200));
 
     const el = $("#mapWrap");
     const dpr = window.devicePixelRatio || 1;
@@ -996,24 +1224,18 @@ async function takeScreenshot() {
       ignoreElements: (node) =>
         node.classList?.contains("sheet") ||
         node.classList?.contains("sheet-backdrop") ||
-        node.classList?.contains("toast"),
+        node.classList?.contains("toast") ||
+        node.classList?.contains("north-fab") ||
+        node.classList?.contains("center-fab") ||
+        node.classList?.contains("pitch-fabs") ||
+        node.classList?.contains("crosshair") ||
+        node.id === "map3d",
     });
 
-    const blob = await new Promise((resolve, reject) => {
-      canvas.toBlob(
-        (b) => (b ? resolve(b) : reject(new Error("PNG oluşturulamadı"))),
-        "image/png"
-      );
-    });
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `MKSI_${dateStamp()}_${canvas.width}x${canvas.height}.png`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    await downloadCanvasPng(
+      canvas,
+      `MKSI_${dateStamp()}_${canvas.width}x${canvas.height}.png`
+    );
     toast(`Kaydedildi (${canvas.width}×${canvas.height})`);
   } catch (err) {
     console.error(err);
@@ -1028,19 +1250,31 @@ async function takeScreenshot() {
         logging: false,
         scale,
         imageTimeout: 20000,
+        ignoreElements: (node) =>
+          node.classList?.contains("north-fab") ||
+          node.classList?.contains("center-fab") ||
+          node.classList?.contains("pitch-fabs") ||
+          node.classList?.contains("crosshair") ||
+          node.id === "map3d",
       });
-      const a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png");
-      a.download = `MKSI_${dateStamp()}_${canvas.width}x${canvas.height}.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      await downloadCanvasPng(
+        canvas,
+        `MKSI_${dateStamp()}_${canvas.width}x${canvas.height}.png`
+      );
       toast(`Kaydedildi (${canvas.width}×${canvas.height})`);
     } catch (err2) {
       console.error(err2);
       toast("Görüntü alınamadı");
     }
   } finally {
+    if (
+      savedBearing != null &&
+      map &&
+      typeof map.setBearing === "function" &&
+      Math.abs(savedBearing) > 0.2
+    ) {
+      map.setBearing(savedBearing);
+    }
     document.body.classList.remove("screenshot-mode");
   }
 }
@@ -1837,7 +2071,7 @@ function savePointAt(lat, lon, name) {
   map.setView([lat, lon], Math.max(map.getZoom(), 14));
   if (view3dActive()) {
     map3d.easeTo({ center: [lon, lat], zoom: Math.max(map3d.getZoom(), 14), duration: 500 });
-    sync3dPoints();
+    sync3dOverlays();
   }
 }
 
@@ -1922,7 +2156,7 @@ function renderSaved() {
     }
   }
   renderLists();
-  sync3dPoints();
+  sync3dOverlays();
 }
 
 function addShapeToLayer(sh, layer) {
